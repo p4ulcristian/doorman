@@ -38,6 +38,22 @@
    [:scope-kinds [:map-of :keyword map?]]
    [:find-session-step [:map [:name :keyword] [:enter fn?]]]])
 
+(def my-actions-options-shape
+  "make-my-actions-handler's options, every key required.
+   :pool: the app's own pool, as put-access-into-handlers's.
+   :tables: the app's table maps, whose :access sentences say which
+   actions are open without a membership.
+   :scope-kinds: the app's kinds of scope (check-scope-kinds).
+   :find-session-step: make-find-session-step's step.
+   :rate-limit: mailroom's, {:max 60 :per-ms 60000} per asker, or nil for
+   none."
+  [:map {:closed true}
+   [:pool some?]
+   [:tables [:sequential map?]]
+   [:scope-kinds [:map-of :keyword map?]]
+   [:find-session-step [:map [:name :keyword] [:enter fn?]]]
+   [:rate-limit [:maybe [:map {:closed true} [:max [:int {:min 1}]] [:per-ms [:int {:min 1}]]]]]])
+
 (def leak-options-shape
   "find-leaks's options, every key required: malli's generator makes each
    handler's other params from its :params-shape.
@@ -70,6 +86,11 @@
   "Returns the options; throws with every problem at once."
   [options]
   (check-data-for-shape "The options" :doorman/bad-options access-options-shape options))
+
+(defn check-my-actions-options
+  "Returns the options; throws with every problem at once."
+  [options]
+  (check-data-for-shape "The options" :doorman/bad-options my-actions-options-shape options))
 
 (defn check-leak-options
   "Returns the options; throws with every problem at once."

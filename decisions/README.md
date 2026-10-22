@@ -24,11 +24,12 @@ All but the last two were made while doorman was two libraries inside Groundwork
 - [A record can belong to a visitor](2026-10-13-a-record-can-belong-to-a-visitor.md), changed in part by [Access rules are sentences in doorman's language](2026-10-17-access-rules-are-sentences-in-doormans-language.md)
 - [Shared rows may belong to nobody](2026-10-16-shared-rows-may-belong-to-nobody.md)
 - [One request may name several scopes](2026-10-18-one-request-may-name-several-scopes.md)
-- [access, piece 1: who belongs where](2026-10-22-access-piece-1-who-belongs-where.md), changed in part by [doorman is its own library](2026-10-22-doorman-is-its-own-library.md)
+- [access, piece 1: who belongs where](2026-10-22-access-piece-1-who-belongs-where.md), changed in part by [doorman is its own library](2026-10-22-doorman-is-its-own-library.md), added to by ["What may I do?" is a handler for the browser](2026-10-23-what-may-i-do-is-a-handler-for-the-browser.md)
 - [access, piece 2: sentences into SQL conditions](2026-10-22-access-piece-2-sentences-into-sql.md), changed in part by [doorman is its own library](2026-10-22-doorman-is-its-own-library.md)
 - [access, piece 3: the check, put in front of every handler](2026-10-22-access-piece-3-the-check.md), changed in part by [doorman is its own library](2026-10-22-doorman-is-its-own-library.md) and [A handler writes out mailroom's keys](2026-10-22-a-handler-writes-out-mailrooms-keys.md)
 - [access, piece 4: the gates](2026-10-22-access-piece-4-the-gates.md), changed in part by [doorman is its own library](2026-10-22-doorman-is-its-own-library.md)
 - [access, piece 5: the leak test](2026-10-22-access-piece-5-the-leak-test.md), changed in part by [doorman is its own library](2026-10-22-doorman-is-its-own-library.md) and [The app passes its wire](2026-10-22-the-app-passes-its-wire.md)
+- ["What may I do?" is a handler for the browser; open actions are listed for every scope](2026-10-23-what-may-i-do-is-a-handler-for-the-browser.md)
 
 ## The library
 

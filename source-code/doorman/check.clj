@@ -23,6 +23,7 @@
   (:require
    [clojure.string :as str]
    [cellar.api :as cellar]
+   [doorman.sentences :as sentences]
    [mailroom.api :as mailroom]
    [jsonista.core :as json]))
 
@@ -80,12 +81,9 @@
    allow it: :anyone (everyone), :signed-in (anyone signed in: :signed-in
    or [:me column] sentences), or nil (only through a scope's role)."
   [tables action]
-  (let [tos (for [{:keys [access]} tables :when (sequential? access)
-                  {:keys [allow to]} access
-                  :when (contains? (if (set? allow) allow #{allow}) action)]
-              to)]
-    (cond (some #{:anyone} tos) :anyone
-          (some #(or (= :signed-in %) (and (vector? %) (= :me (first %)))) tos) :signed-in)))
+  (let [{:keys [anyone signed-in]} (sentences/find-open-actions tables)]
+    (cond (contains? anyone action)    :anyone
+          (contains? signed-in action) :signed-in)))
 
 (defn- may-person-have-action?
   "For a handler without a :record: whether the person can have its action

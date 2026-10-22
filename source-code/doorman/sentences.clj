@@ -80,3 +80,22 @@
     (if (seq sentences)
       (str/join " OR " (map #(turn-sentence-into-sql % action place) sentences))
       "false")))
+
+(defn find-open-actions
+  "The actions a person can have without a membership, from every
+   table's sentences: {:anyone #{…}, everyone's, :signed-in #{…}, anyone
+   signed in's: :signed-in sentences and [:me column] ones (the person a
+   column names, so only someone signed in)}. A sentence's :when narrows
+   which rows, not who."
+  [tables]
+  (reduce (fn [open {:keys [allow to]}]
+            (let [actions (find-allowed-actions {:allow allow})]
+              (cond (= :anyone to)
+                    (update open :anyone into actions)
+                    (or (= :signed-in to) (and (vector? to) (= :me (first to))))
+                    (update open :signed-in into actions)
+                    :else open)))
+          {:anyone #{} :signed-in #{}}
+          (for [{:keys [access]} tables :when (sequential? access)
+                sentence access]
+            sentence)))

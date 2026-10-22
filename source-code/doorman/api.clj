@@ -31,6 +31,7 @@
    [doorman.conditions :as conditions]
    [doorman.leaks :as leaks]
    [doorman.memberships :as memberships]
+   [doorman.my-actions :as my-actions]
    [doorman.scope-kinds :as scope-kinds]
    [doorman.sessions :as sessions]
    [doorman.settings :as settings]
@@ -232,6 +233,41 @@
               (assoc table-map :gates operations)
               (assoc table-map :gates nil)))
           tables)))
+
+(def my-actions-answer-shape
+  "The answer of make-my-actions-handler's handler: every scope the
+   person is in with the actions they may do there, and an entry of nil
+   kind and id for the actions open to them in every scope:
+
+     [{:scope-kind nil   :scope-id nil      :actions [:profile/edit]}
+      {:scope-kind :shop :scope-id #uuid \"…\" :actions [:orders/edit :orders/see]}]
+
+   parlor's actions-answer-shape, the browser's side of the same."
+  my-actions/answer-shape)
+
+(defn make-my-actions-handler
+  "A handler, every mailroom key written out, answering \"what may I
+   do?\" for the browser (parlor's \"can I?\"): the asking person's
+   actions by scope (list-actions-of-person), and, under nil kind and id,
+   the actions open to them in every scope: :anyone sentences' for
+   everyone, and :signed-in and [:me column] sentences' for someone signed
+   in. A [:me …] action is had on the rows that name the person, which no
+   scope lists: it is listed for every scope, and the row decides. Nobody
+   signed in gets the :anyone actions only. The params are {}; the answer
+   is my-actions-answer-shape. It runs as the asking person: the
+   find-session step first, then a read-only transaction, in which its
+   step reads doorman's tables (so doorbell's notes name them). It is
+   ready as it is: not for put-access-into-handlers, which wants an
+   :action. The app names it; house: :doorman/my-actions.
+
+     (assoc handlers :doorman/my-actions
+            (doorman/make-my-actions-handler {:pool pool :tables tables :scope-kinds scope-kinds
+                                              :find-session-step find-session-step
+                                              :rate-limit {:max 60 :per-ms 60000}}))   ; or nil
+
+   The options, every key required, are checked first."
+  [options]
+  (my-actions/make-my-actions-handler (settings/check-my-actions-options options)))
 
 (defn find-leaks
   "The leak test, for an app's own test suite: every handler (made ready by

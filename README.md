@@ -39,6 +39,7 @@ step's lines say who asked
 | what | `access-tables` | its tables, `doorman.scopes` `doorman.roles` `doorman.role_actions` `doorman.memberships` |
 | what | `check-scope-kinds` | the app's kinds of scope, checked |
 | what | `add-scope!` `add-role!` `add-membership!` `remove-membership!` `list-actions-of-person` | who belongs where; a scope's founder is its Owner, holding every action |
+| what | `make-my-actions-handler` `my-actions-answer-shape` | "what may I do?" for the browser: the asker's actions by scope, and the open ones (`:anyone`; `:signed-in` and `[:me …]` when signed in) under nil kind and id, every scope; read-only, as the asker |
 | what | `make-sql-conditions` | the sentences, checked, as SQL: one condition per action and per operation |
 | what | `install-access-functions!` | `doorman.find_asking_person()` and `doorman.find_scopes_holding(kind, action)`, before migrate |
 | what | `put-access-into-handlers` | the check in front of every handler's steps, which run in a transaction that knows who is asking |
@@ -96,6 +97,14 @@ every key mailroom reads (`:steps :params-shape :answer-shape :rate-limit
     :find-session-step (doorman/make-find-session-step app-pool settings)}))
 
 ;; at the end of the app's own login
+;; "what may I do?", for the browser (parlor's "can I?"), as the asker, read-only
+(def handlers-with-my-actions
+  (assoc ready :doorman/my-actions
+         (doorman/make-my-actions-handler {:pool app-pool :tables [shops orders] :scope-kinds scope-kinds
+                                           :find-session-step (doorman/make-find-session-step app-pool settings)
+                                           :rate-limit {:max 60 :per-ms 60000}})))   ; or nil
+;=> [{:scope-kind nil :scope-id nil :actions […]} {:scope-kind :shop :scope-id #uuid "…" :actions [:orders/edit :orders/see]}]
+
 (let [{:keys [set-cookie]} (doorman/sign-in! app-pool person-id settings)]
   {:status 302 :headers {"location" "/" "set-cookie" set-cookie}})
 
