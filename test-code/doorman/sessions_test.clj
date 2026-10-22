@@ -4,6 +4,7 @@
   (:require
    [clojure.test :refer [deftest is testing]]
    [doorman.api :as doorman]
+   [doorman.test-log :as test-log]
    [doorman.test-settings :as test-settings]
    [doorman.cookie :as cookie]
    [cellar.api :as cellar]
@@ -21,7 +22,7 @@
                      set-cookie (assoc "cookie" (first (clojure.string/split set-cookie #";"))))})
 
 (defn- run-find-session [step request]
-  (mailroom/run-steps-until-answered [step] {:mailroom/request request}))
+  (mailroom/run-steps-until-answered [step] {:mailroom/request request :mailroom/log test-log/log}))
 
 (deftest the-cookie
   (testing "only the fingerprint is kept, and it is the same for the same cookie"
@@ -54,8 +55,13 @@
         (cellar/run-statement! pool (cellar/make-query-from-sql-text "test" "DROP SCHEMA IF EXISTS doorman CASCADE; DROP SCHEMA IF EXISTS cellar CASCADE") {})
         (with-out-str @(:slow-part (cellar/migrate! pool [doorman/sessions-table] [] test-settings/migrate-options)))
         (let [{:keys [set-cookie]} (doorman/sign-in! pool anna settings)]
-          (testing "a signed-in request: the person is in the context"
-            (is (= anna (:doorman/person-id (run-find-session step (make-request set-cookie "https://app.test"))))))
+          (testing "a signed-in request: the person is in the context, and in the message's log"
+            (let [context (run-find-session step (make-request set-cookie "https://app.test"))]
+              (is (= anna (:doorman/person-id context)))
+              (reset! test-log/lines [])
+              ((:mailroom/log context) :info :test/later-step {})
+              (is (= [{"person-id" (str anna)}] (mapv #(get % "context") @test-log/lines))
+                  "every line a later step writes says who asked")))
           (testing "another site's request is answered with an error, before any work"
             (is (contains? (:mailroom/answer (run-find-session step (make-request set-cookie "https://evil.test"))) :error)))
           (testing "no cookie: nobody"

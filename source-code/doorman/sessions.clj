@@ -6,6 +6,7 @@
    [doorman.cookie :as cookie]
    [doorman.origin :as origin]
    [doorman.settings :as settings]
+   [logbook.api :as logbook]
    [mailroom.api :as mailroom])
   (:import
    (java.time Duration Instant OffsetDateTime ZoneOffset)))
@@ -70,5 +71,8 @@
      :enter (fn [context]
               (let [request (:mailroom/request context)]
                 (if (origin/does-request-come-from-allowed-origin? request allowed-origin)
-                  (assoc context :doorman/person-id (find-person-id pool request settings))
+                  (let [person-id (find-person-id pool request settings)]
+                    (cond-> (assoc context :doorman/person-id person-id)
+                      ;; the steps after this one, and what they call, write lines that say who asked
+                      person-id (update :mailroom/log logbook/with-context {:person-id person-id})))
                   (mailroom/add-answer-to-context context not-from-the-app))))}))

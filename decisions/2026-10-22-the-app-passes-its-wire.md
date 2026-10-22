@@ -1,5 +1,7 @@
 # The app passes its wire; doorman never makes one
 
+> **Changed in part** by [The session step adds the person to the message's log; the leak test takes the app's log](2026-10-22-the-session-step-adds-the-person-to-the-log.md) (2026-10-22, v0.3.0): `find-leaks` takes `:log` beside `:wire`.
+
 > Changes in part [access, piece 5: the leak test](2026-10-22-access-piece-5-the-leak-test.md) (`find-leaks` takes the wire) and [doorman is its own library](2026-10-22-doorman-is-its-own-library.md) (doorman no longer needs wire itself). Since v0.2.0, on mailroom v0.2.0.
 
 **Decision:** wire v0.2.0 makes a wire from settings, and mailroom v0.2.0 takes the app's wire wherever it sends or reads a message. doorman's one call that does so is the leak test's: `find-leaks` asks each handler through mailroom's `answer-message`. So `find-leaks` takes the app's wire as a required key, `:wire`, in its options, and hands it to mailroom; doorman never makes a wire and carries no wire settings.

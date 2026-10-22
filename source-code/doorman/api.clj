@@ -91,8 +91,10 @@
   "A step for the start of a handler: a request that changes something must
    come from the app's own pages (its Origin), or it is answered with an
    error; then :doorman/person-id is added to the context, nil when nobody
-   is signed in. Reads the request at :mailroom/request. Checks the
-   settings first."
+   is signed in, and someone signed in is added to the message's log
+   (mailroom's :mailroom/log, given logbook's with-context {:person-id …}),
+   so every line the later steps write says who asked. Reads the request
+   at :mailroom/request. Checks the settings first."
   [pool settings]
   (sessions/make-find-session-step pool settings))
 
@@ -239,9 +241,10 @@
    each; any other must give none of them back. Its other params come from
    its :params-shape, by malli's generator, with the options' :seed and
    :size. Each message is answered as over http, by the options' :wire, the
-   app's wire (doorman never makes one). Every option is required. Returns
-   every leak; empty means none.
+   app's wire, and :log, the app's log (doorman makes neither). Every
+   option is required. Returns every leak; empty means none.
 
-     (is (= [] (doorman/find-leaks ready-handlers anna-request {:orders [order-in-shop-9]} {:wire wire :seed 7 :size 30})))"
+     (is (= [] (doorman/find-leaks ready-handlers anna-request {:orders [order-in-shop-9]}
+                                   {:wire wire :log log :seed 7 :size 30})))"
   [handlers request foreign-ids options]
   (leaks/find-leaks handlers request foreign-ids (settings/check-leak-options options)))

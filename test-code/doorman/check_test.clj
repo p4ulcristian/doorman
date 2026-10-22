@@ -7,6 +7,7 @@
    [doorman.api :as doorman]
    [doorman.test-settings :as test-settings]
    [cellar.api :as cellar]
+   [doorman.test-log :as test-log :refer [log]]
    [doorman.test-wire :refer [wire]]
    [mailroom.api :as mailroom])
   (:import
@@ -47,7 +48,9 @@
 
 (def ^:private answer-the-order
   {:name  :answer-the-order
-   :enter #(mailroom/add-answer-to-context % {:order/id (get-in % [:mailroom/message-data :order/id])})})
+   :enter (fn [{:mailroom/keys [log message-data] :as context}]
+            (log :info :test/answering {:order/id (:order/id message-data)})
+            (mailroom/add-answer-to-context context {:order/id (:order/id message-data)}))})
 
 (def ^:private carl #uuid "00000000-0000-4000-8000-00000000000e")
 
@@ -101,6 +104,7 @@
 (def ^:private server-options
   "mailroom's options: askers by address, no hooks."
   {:wire                wire
+   :log                 log
    :find-rate-limit-key #(mailroom/find-client-address % nil)
    :on-sse-open nil :on-sse-close nil :on-ws-open nil :on-ws-close nil})
 
@@ -133,7 +137,7 @@
   (let [errors (try (doorman/find-leaks {} {} {} {:seed 7 :size 30})
                     (catch clojure.lang.ExceptionInfo e (ex-data e)))]
     (is (= :doorman/bad-options (:type errors)))
-    (is (= #{:wire} (set (keys (:errors errors)))) "doorman makes no wire: the app hands its own in")))
+    (is (= #{:wire :log} (set (keys (:errors errors)))) "doorman makes no wire and no log: the app hands its own in")))
 
 (deftest the-check-end-to-end
   (if-not port
@@ -142,13 +146,18 @@
           ready  (doorman/put-access-into-handlers handlers {:pool pool :tables [shops orders] :scope-kinds scope-kinds
                                                             :find-session-step (doorman/make-find-session-step pool settings)})
           server (mailroom/start-server! (get-in (first (mailroom/make-routes-for-messages ready server-settings server-options)) [1 :post :handler])
-                                          server-settings)
+                                          server-settings {:log log})
           cookie #(first (str/split (:set-cookie (doorman/sign-in! pool % settings)) #";"))]
       (try
         (make-database! pool)
         (let [anna-cookie (cookie anna)]
           (testing "Anna, Staff in shop 7, sees order 42"
-            (is (= (str "{\"orders/one\":{\"order/id\":\"" order-42 "\"}}") (ask (:port server) anna-cookie order-42))))
+            (reset! test-log/lines [])
+            (is (= (str "{\"orders/one\":{\"order/id\":\"" order-42 "\"}}") (ask (:port server) anna-cookie order-42)))
+            (let [[line] (test-log/find-lines "test/answering")]
+              (is (= (str anna) (get-in line ["context" "person-id"]))
+                  "the handler's own step writes who asked, which the session step added")
+              (is (some? (get-in line ["context" "request-id"])) "beside the message's request id")))
           (testing "Anna asks for shop 9's order 99: not found"
             (is (= "{\"orders/one\":{\"error\":\"Not found.\"}}" (ask (:port server) anna-cookie order-99)))))
         (testing "Bob, Owner of shop 9 only, asks for order 42: not found"

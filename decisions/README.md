@@ -10,7 +10,7 @@ All but the last two were made while doorman was two libraries inside Groundwork
 - [The session is the only truth](2026-10-12-the-session-is-the-only-truth.md)
 - [doorman ships no logins](2026-10-12-doorman-ships-no-logins.md), moved from Groundwork
 - [Sessions for visitors, and none for servers](2026-10-12-sessions-for-visitors-and-none-for-servers.md), moved from Groundwork (its sessions part)
-- [sessions v1: signed-in sessions, a step to find them](2026-10-22-sessions-v1.md), changed in part by [doorman is its own library](2026-10-22-doorman-is-its-own-library.md)
+- [sessions v1: signed-in sessions, a step to find them](2026-10-22-sessions-v1.md), changed in part by [doorman is its own library](2026-10-22-doorman-is-its-own-library.md) and [The session step adds the person to the message's log](2026-10-22-the-session-step-adds-the-person-to-the-log.md)
 
 ## What may they do
 
@@ -34,4 +34,5 @@ All but the last two were made while doorman was two libraries inside Groundwork
 
 - [doorman is its own library](2026-10-22-doorman-is-its-own-library.md), changed in part by [The app passes its wire](2026-10-22-the-app-passes-its-wire.md)
 - [A handler writes out mailroom's keys, and its :run-steps-in is nil](2026-10-22-a-handler-writes-out-mailrooms-keys.md)
-- [The app passes its wire; doorman never makes one](2026-10-22-the-app-passes-its-wire.md)
+- [The app passes its wire; doorman never makes one](2026-10-22-the-app-passes-its-wire.md), changed in part by [The session step adds the person to the message's log](2026-10-22-the-session-step-adds-the-person-to-the-log.md)
+- [The session step adds the person to the message's log; the leak test takes the app's log](2026-10-22-the-session-step-adds-the-person-to-the-log.md)

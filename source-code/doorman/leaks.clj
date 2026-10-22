@@ -8,7 +8,7 @@
    handler's :params-shape, by malli's generator, with the options' :seed
    (the same params every run) and :size (how big the made-up values get).
    Each message is answered by mailroom's answer-message, by the options'
-   :wire."
+   :wire and :log."
   (:require
    [mailroom.api :as mailroom]
    [malli.generator :as generator]))
@@ -22,8 +22,8 @@
   [data]
   (set (map str (filter #(or (uuid? %) (string? %)) (tree-seq coll? seq data)))))
 
-(defn- ask [handlers request handler-name params {:keys [wire]}]
-  (get (mailroom/answer-message handlers :no-rate-limits request {handler-name params} {:wire wire}) handler-name))
+(defn- ask [handlers request handler-name params {:keys [wire log]}]
+  (get (mailroom/answer-message handlers :no-rate-limits request {handler-name params} {:wire wire :log log}) handler-name))
 
 (defn- check-record-handler [handlers request [handler-name {[table-key id-key] :record :as handler}] foreign-ids options]
   (for [id (get foreign-ids table-key)

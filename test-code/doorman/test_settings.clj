@@ -30,4 +30,5 @@
 
 (def migrate-options
   {:instant-part {:statement-timeout-ms 10000 :lock-timeout-ms 5000}
-   :slow-part    {:statement-timeout-ms :none :lock-timeout-ms 5000}})
+   :slow-part    {:statement-timeout-ms :none :lock-timeout-ms 5000}
+   :log          (fn [_level _event _data])})

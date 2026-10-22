@@ -44,10 +44,13 @@
    :wire: the app's wire (wire.api's make-wire-from-settings), which each
    message is answered by, as over http (mailroom's answer-message);
    doorman never makes one.
+   :log: the app's log (logbook's log-function), which each message's log
+   is made from, as over http; doorman never makes one.
    :seed: the same seed makes the same params every run.
    :size: how big the made-up values get (malli's 30 when it chose)."
   [:map {:closed true}
    [:wire [some? {:error/message "should be the app's wire, made by wire.api/make-wire-from-settings"}]]
+   [:log [fn? {:error/message "should be the app's log function, made by logbook"}]]
    [:seed :int]
    [:size [:int {:min 0}]]])
 

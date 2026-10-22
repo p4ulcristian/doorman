@@ -16,11 +16,15 @@ io.github.p4ulcristian/doorman {:git/tag "v0.2.0" :git/sha "cdc2e70"}
 
 Needs [cellar](https://github.com/p4ulcristian/cellar) (Postgres, tables as
 maps, their gates), [mailroom](https://github.com/p4ulcristian/mailroom) (a
-handler's steps), malli with test.check (the settings checked, the leak
+handler's steps), [logbook](https://github.com/p4ulcristian/logbook) (the
+message's log), malli with test.check (the settings checked, the leak
 test's params) and jsonista. One public namespace, `doorman.api`; its parts
 are `doorman.*`. The leak test takes the app's
-[wire](https://github.com/p4ulcristian/wire) under `:wire`; doorman never
-makes one.
+[wire](https://github.com/p4ulcristian/wire) under `:wire` and its log under
+`:log`; doorman makes neither. The find-session step adds the person to the
+message's log (mailroom's `:mailroom/log`, `{:person-id …}`), so every later
+step's lines say who asked
+([why](decisions/2026-10-22-the-session-step-adds-the-person-to-the-log.md)).
 
 ## The api
 
@@ -30,7 +34,7 @@ makes one.
 | who | `sessions-table` | its table, `doorman.sessions`, as a map for cellar |
 | who | `sign-in!` `sign-out!` `sign-out-everywhere!` | a session made for a proven person (the Set-Cookie text back); ended at once |
 | who | `delete-ended-sessions!` | forgets ended sessions; for a nightly background job |
-| who | `make-find-session-step` | the step first in a handler: the Origin checked, `:doorman/person-id` in the context |
+| who | `make-find-session-step` | the step first in a handler: the Origin checked, `:doorman/person-id` in the context and the person in `:mailroom/log` |
 | who | `find-session-key-of-request` | a hash of the session cookie, for rate limits |
 | what | `access-tables` | its tables, `doorman.scopes` `doorman.roles` `doorman.role_actions` `doorman.memberships` |
 | what | `check-scope-kinds` | the app's kinds of scope, checked |
@@ -39,7 +43,7 @@ makes one.
 | what | `install-access-functions!` | `doorman.find_asking_person()` and `doorman.find_scopes_holding(kind, action)`, before migrate |
 | what | `put-access-into-handlers` | the check in front of every handler's steps, which run in a transaction that knows who is asking |
 | what | `put-gates-on-tables` | the table maps with their gates, `:gates nil` on the ungated ones, for cellar |
-| what | `find-leaks` | the leak test, for the app's own tests, by the app's wire (`:wire`) |
+| what | `find-leaks` | the leak test, for the app's own tests, by the app's wire and log (`:wire`, `:log`) |
 
 Nothing has a default: every setting and option is written out; a missing
 one refuses, named, with every other problem at once. A handler writes out
@@ -95,8 +99,8 @@ every key mailroom reads (`:steps :params-shape :answer-shape :rate-limit
 (let [{:keys [set-cookie]} (doorman/sign-in! app-pool person-id settings)]
   {:status 302 :headers {"location" "/" "set-cookie" set-cookie}})
 
-;; in the app's tests, with the app's wire (wire.api's make-wire-from-settings)
-(is (= [] (doorman/find-leaks ready anna-request {:orders [order-in-another-shop]} {:wire wire :seed 7 :size 30})))
+;; in the app's tests, with the app's wire (wire.api's make-wire-from-settings) and log (logbook's)
+(is (= [] (doorman/find-leaks ready anna-request {:orders [order-in-another-shop]} {:wire wire :log log :seed 7 :size 30})))
 ```
 
 ## Tests

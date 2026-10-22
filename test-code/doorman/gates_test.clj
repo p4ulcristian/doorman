@@ -9,6 +9,7 @@
    [doorman.api :as doorman]
    [doorman.test-settings :as test-settings]
    [cellar.api :as cellar]
+   [doorman.test-log :refer [log]]
    [doorman.test-wire :refer [wire]]
    [mailroom.api :as mailroom])
   (:import
@@ -110,6 +111,7 @@
 (def ^:private server-options
   "mailroom's options: askers by address, no hooks."
   {:wire                wire
+   :log                 log
    :find-rate-limit-key #(mailroom/find-client-address % nil)
    :on-sse-open nil :on-sse-close nil :on-ws-open nil :on-ws-close nil})
 
@@ -126,15 +128,15 @@
             ready    (doorman/put-access-into-handlers handlers {:pool app-pool :tables [shops orders] :scope-kinds scope-kinds
                                                                 :find-session-step (doorman/make-find-session-step app-pool settings)})
             server   (mailroom/start-server! (get-in (first (mailroom/make-routes-for-messages ready server-settings server-options)) [1 :post :handler])
-                                              server-settings)
+                                              server-settings {:log log})
             cookie   #(first (str/split (:set-cookie (doorman/sign-in! app-pool % settings)) #";"))]
         (try
           (testing "the app's own role, which owns nothing, signs in and out, and the functions answer it"
             (let [request {:request-method :post :headers {"origin" "http://app.test" "cookie" (cookie anna)}}
                   step    (doorman/make-find-session-step app-pool settings)]
-              (is (= anna (:doorman/person-id (mailroom/run-steps-until-answered [step] {:mailroom/request request}))))
+              (is (= anna (:doorman/person-id (mailroom/run-steps-until-answered [step] {:mailroom/request request :mailroom/log log}))))
               (doorman/sign-out! app-pool request settings)
-              (is (nil? (:doorman/person-id (mailroom/run-steps-until-answered [step] {:mailroom/request request}))))
+              (is (nil? (:doorman/person-id (mailroom/run-steps-until-answered [step] {:mailroom/request request :mailroom/log log}))))
               (is (= {:asking/nobody true :asking/no-scopes true}
                      (cellar/find-one-row app-pool (cellar/make-query-from-sql-text
                                                     "the functions, as the app's role"
@@ -163,7 +165,7 @@
           (testing "the leak test: Anna, asked for shop 9's order, gets nothing of it"
             (let [anna-request {:request-method :post
                                 :headers {"origin" "http://app.test" "cookie" (cookie anna)}}]
-              (is (= [] (doorman/find-leaks (select-keys ready [:orders/all]) anna-request {:orders [order-99]} {:wire wire :seed 7 :size 30})))
+              (is (= [] (doorman/find-leaks (select-keys ready [:orders/all]) anna-request {:orders [order-99]} {:wire wire :log log :seed 7 :size 30})))
               (testing "and a handler that reads past the gates is caught"
                 (let [leaky {:orders/leaky {:action :orders/see :params-shape [:map] :answer-shape [:vector :uuid]
                                             :rate-limit nil :run-steps-in nil
@@ -173,7 +175,7 @@
                       ready-leaky (doorman/put-access-into-handlers leaky {:pool app-pool :tables [shops orders] :scope-kinds scope-kinds
                                                                           :find-session-step (doorman/make-find-session-step app-pool settings)})]
                   (is (= [{:handler :orders/leaky :gave-back [(str order-99)]}]
-                         (doorman/find-leaks ready-leaky anna-request {:orders [order-99]} {:wire wire :seed 7 :size 30})))))))
+                         (doorman/find-leaks ready-leaky anna-request {:orders [order-99]} {:wire wire :log log :seed 7 :size 30})))))))
           (finally
             (mailroom/stop-server! server)
             (cellar/stop-pool! app-pool)
