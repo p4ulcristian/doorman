@@ -38,6 +38,7 @@ step's lines say who asked
 | who | `find-session-key-of-request` | a hash of the session cookie, for rate limits |
 | what | `access-tables` | its tables, `doorman.scopes` `doorman.roles` `doorman.role_actions` `doorman.memberships` |
 | what | `check-scope-kinds` | the app's kinds of scope, checked |
+| what | `does-action-only-read?` | whether an action only reads (its handlers run read-only); every other one's may write |
 | what | `add-scope!` `add-role!` `add-membership!` `remove-membership!` `list-actions-of-person` | who belongs where; a scope's founder is its Owner, holding every action |
 | what | `make-my-actions-handler` `my-actions-answer-shape` | "what may I do?" for the browser: the asker's actions by scope, and the open ones (`:anyone`; `:signed-in` and `[:me …]` when signed in) under nil kind and id, every scope; read-only, as the asker |
 | what | `make-sql-conditions` | the sentences, checked, as SQL: one condition per action and per operation |

@@ -38,3 +38,9 @@
   (if (= owner-role role-name)
     (set (keys (get-in scope-kinds [kind :actions])))
     role-actions))
+
+(defn does-action-only-read?
+  "Whether the action does nothing but :read in its kind: its handlers run
+   in a read-only transaction. An action no kind has is not."
+  [scope-kinds action]
+  (= #{:read} (some #(get-in % [:actions action]) (vals scope-kinds))))

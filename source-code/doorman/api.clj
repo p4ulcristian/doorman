@@ -143,6 +143,17 @@
   [scope-kinds]
   (scope-kinds/check-scope-kinds scope-kinds))
 
+(defn does-action-only-read?
+  "Whether an action does nothing but :read (its kind says #{:read}): a
+   handler of it runs in a read-only transaction, which Postgres keeps
+   from writing. Every other action's handlers may write; house keys their
+   messages to run once. An action no kind has: false.
+
+     (doorman/does-action-only-read? scope-kinds :orders/see)   ;=> true
+     (doorman/does-action-only-read? scope-kinds :orders/edit)  ;=> false"
+  [scope-kinds action]
+  (scope-kinds/does-action-only-read? scope-kinds action))
+
 (defn add-role!
   "Gives a scope a role allowing these actions, each one of the kind's."
   [transaction scope-kinds scope role-name actions]

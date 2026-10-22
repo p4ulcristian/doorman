@@ -23,6 +23,7 @@
   (:require
    [clojure.string :as str]
    [cellar.api :as cellar]
+   [doorman.scope-kinds :as scope-kinds]
    [doorman.sentences :as sentences]
    [mailroom.api :as mailroom]
    [jsonista.core :as json]))
@@ -129,7 +130,7 @@
   "An action that does nothing but :read runs in a read-only transaction:
    Postgres refuses any write its steps try."
   [{:keys [scope-kinds]} action]
-  (= #{:read} (some #(get-in % [:actions action]) (vals scope-kinds))))
+  (scope-kinds/does-action-only-read? scope-kinds action))
 
 (defn- make-run-steps-in [{:keys [pool find-session-step list-actions] :as setup} {:keys [action]}]
   (fn [run context]

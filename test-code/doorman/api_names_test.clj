@@ -10,7 +10,7 @@
            settings-shape sessions-table sign-in! sign-out! sign-out-everywhere! delete-ended-sessions!
            find-session-key-of-request make-find-session-step
            ;; what may they do
-           access-tables check-scope-kinds add-scope! add-role! add-membership! remove-membership!
+           access-tables check-scope-kinds does-action-only-read? add-scope! add-role! add-membership! remove-membership!
            list-actions-of-person make-sql-conditions install-access-functions!
            put-access-into-handlers put-gates-on-tables find-leaks
            my-actions-answer-shape make-my-actions-handler}

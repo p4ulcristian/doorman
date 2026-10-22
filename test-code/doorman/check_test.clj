@@ -177,3 +177,10 @@
         (finally
           (mailroom/stop-server! server)
           (cellar/stop-pool! pool))))))
+
+(deftest an-action-that-only-reads
+  (let [kinds (doorman/check-scope-kinds
+               {:shop {:table :shops :actions {:orders/see #{:read} :orders/edit #{:read :update}} :roles {}}})]
+    (is (true? (doorman/does-action-only-read? kinds :orders/see)) "runs read-only")
+    (is (false? (doorman/does-action-only-read? kinds :orders/edit)) "may write")
+    (is (false? (doorman/does-action-only-read? kinds :orders/unknown)) "no kind has it")))
