@@ -11,7 +11,7 @@ one SQL condition per action; the check in front of every handler; the
 gates (Postgres's row rules) from the same conditions; and the leak test.
 
 ```clojure
-io.github.p4ulcristian/doorman {:git/tag "v0.2.0" :git/sha "cdc2e70"}
+io.github.p4ulcristian/doorman {:git/tag "v0.3.0" :git/sha "49af9f9"}
 ```
 
 Needs [cellar](https://github.com/p4ulcristian/cellar) (Postgres, tables as
