@@ -1,5 +1,7 @@
 # Sessions for visitors, and none for servers
 
+> **Built** by [Visitors get sessions of their own, and their rows move to the person at sign-in](2026-10-23-visitors-get-sessions-and-their-rows-move-at-sign-in.md) (2026-10-23, v0.7.0): the length is `:visitor-session-days`, renewed like a person's; a visitor's things are rows, not session data; the frame cookie is not built yet; servers get no session.
+
 > Moved from Groundwork (2026-10-22): the sessions part of Groundwork's "Pages for other sites, visitors, and servers". Embeddable pages, and declaring a route's kind, stay in Groundwork's copy.
 
 **Decision:** two kinds of request beyond a signed-in person on the app's own pages:

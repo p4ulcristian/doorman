@@ -1,5 +1,7 @@
 # doorman is its own library
 
+> **Changed in part** (2026-10-23, v0.7.0) by [Visitors get sessions of their own](2026-10-23-visitors-get-sessions-and-their-rows-move-at-sign-in.md) (the setting `:visitor-session-days`; `sign-in!`'s options) and [A scope kind writes out every key](2026-10-23-a-scope-kind-writes-out-every-key.md).
+
 > **Changed in part** by [The app passes its wire; doorman never makes one](2026-10-22-the-app-passes-its-wire.md) (2026-10-22, v0.2.0): the settings are checked by malli itself, and doorman needs wire no more; `find-leaks` takes the app's wire.
 
 > Changes in part [sessions v1](2026-10-22-sessions-v1.md), [access, piece 1](2026-10-22-access-piece-1-who-belongs-where.md), [piece 2](2026-10-22-access-piece-2-sentences-into-sql.md), [piece 3](2026-10-22-access-piece-3-the-check.md), [piece 4](2026-10-22-access-piece-4-the-gates.md), [piece 5](2026-10-22-access-piece-5-the-leak-test.md) and [Sessions live in Postgres](2026-10-12-sessions-live-in-postgres.md): their names, their keys, and every default they had.

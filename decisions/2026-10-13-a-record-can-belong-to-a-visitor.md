@@ -1,5 +1,7 @@
 # A record can belong to a visitor
 
+> **Built** by [Visitors get sessions of their own, and their rows move to the person at sign-in](2026-10-23-visitors-get-sessions-and-their-rows-move-at-sign-in.md) (2026-10-23, v0.7.0): a table map's `:visitor {:column … :moves-to …}`; the move passes the gates by a branch only sign-in's transaction opens.
+
 > **Changed in part** by [Access rules are sentences in doorman's language](2026-10-17-access-rules-are-sentences-in-doormans-language.md) (2026-10-17): the visitor reaches the row through a `[:me <column>]` sentence, and a scope through a `:via` sentence instead of a pass.
 
 > Adds to [doorman ships permissions](2026-10-12-doorman-ships-permissions.md) and [Sessions for visitors, and none for servers](2026-10-12-sessions-for-visitors-and-none-for-servers.md).

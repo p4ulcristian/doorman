@@ -12,19 +12,59 @@
   "The settings, every key required.
    :cookie-name: the session cookie's name. Cookies don't tell ports apart,
    so two apps on one host (localhost in development) need two names.
-   :session-days: how long a session lasts unseen.
-   :renew-after-minutes: a session seen again lasts :session-days from
-   then, at most once in this many minutes (one write, not one per
-   request).
+   :session-days: how long a signed-in person's session lasts unseen.
+   :visitor-session-days: how long a visitor's session (someone not
+   signed in, for whom the app keeps something) lasts unseen; its rows
+   are nobody's once it has ended.
+   :renew-after-minutes: a session seen again lasts its days from then,
+   at most once in this many minutes (one write, not one per request).
    :allowed-origin: the app's own address; a request that changes something
    must carry it as its Origin.
    :secure-cookie?: false only in local development, over plain http."
   [:map {:closed true}
    [:cookie-name [:re #"^[A-Za-z0-9_-]+$"]]
    [:session-days pos-int?]
+   [:visitor-session-days pos-int?]
    [:renew-after-minutes pos-int?]
    [:allowed-origin :string]
    [:secure-cookie? :boolean]])
+
+(def ^:private flags-shape
+  [:set [:fn {:error/message "should be a keyword without a namespace, like :impersonated"}
+         #(and (simple-keyword? %) (re-matches #"[a-z0-9-]+" (name %)))]])
+
+(def sign-in-options-shape
+  "sign-in!'s options, every key required.
+   :settings: the settings (settings-shape).
+   :tables: the app's table maps; those with a :visitor column that
+   :moves-to a person column have the visitor's rows moved to the person.
+   :session-flags: the session's flags, #{} for none (#{:impersonated}
+   for an admin acting as someone): the denies that name one say no."
+  [:map {:closed true}
+   [:settings map?]
+   [:tables [:sequential map?]]
+   [:session-flags flags-shape]])
+
+(def asker-shape
+  "Who explain-refusal explains for, every key required: the session's
+   person, its visitor (for nobody signed in) and its flags."
+  [:map {:closed true}
+   [:person-id [:maybe :uuid]]
+   [:visitor-id [:maybe :uuid]]
+   [:session-flags flags-shape]])
+
+(def explain-options-shape
+  "explain-refusal's options, every key required.
+   :pool: the app's own pool; the explaining runs read-only.
+   :handlers: the app's handlers, by name, each with its :action (and
+   :record).
+   :tables: the app's table maps, with their :access sentences.
+   :scope-kinds: the app's kinds of scope (check-scope-kinds)."
+  [:map {:closed true}
+   [:pool some?]
+   [:handlers [:map-of :keyword map?]]
+   [:tables [:sequential map?]]
+   [:scope-kinds [:map-of :keyword map?]]])
 
 (def access-options-shape
   "put-access-into-handlers's options, every key required.
@@ -81,6 +121,24 @@
   "Returns the settings; throws with every problem at once."
   [settings]
   (check-data-for-shape "The settings" :doorman/bad-settings settings-shape settings))
+
+(defn check-sign-in-options
+  "Returns the options, the settings in them checked too; throws with
+   every problem at once."
+  [options]
+  (check-data-for-shape "The options" :doorman/bad-options sign-in-options-shape options)
+  (check-settings (:settings options))
+  options)
+
+(defn check-asker
+  "Returns the asker; throws with every problem at once."
+  [asker]
+  (check-data-for-shape "The asker" :doorman/bad-asker asker-shape asker))
+
+(defn check-explain-options
+  "Returns the options; throws with every problem at once."
+  [options]
+  (check-data-for-shape "The options" :doorman/bad-options explain-options-shape options))
 
 (defn check-access-options
   "Returns the options; throws with every problem at once."

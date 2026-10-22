@@ -22,7 +22,8 @@
   (doorman/check-scope-kinds
    {:shop {:table   :shops
            :actions {:orders/see #{:read} :orders/edit #{:read :insert :update}}
-           :roles   {"Staff" #{:orders/see :orders/edit}}}}))
+           :roles   {"Staff" #{:orders/see :orders/edit}}
+           :parent  nil :single? false :denies []}}))
 
 (def ^:private shops
   {:table     :shops
@@ -47,7 +48,7 @@
 (def ^:private order-42 #uuid "42000000-0000-4000-8000-000000000042")
 (def ^:private order-99 #uuid "99000000-0000-4000-8000-000000000099")
 
-(def ^:private settings {:cookie-name "app_session" :session-days 1 :renew-after-minutes 60 :allowed-origin "http://app.test" :secure-cookie? false})
+(def ^:private settings {:cookie-name "app_session" :session-days 1 :visitor-session-days 1 :renew-after-minutes 60 :allowed-origin "http://app.test" :secure-cookie? false})
 
 (def ^:private find-all-orders (cellar/make-query-from-sql-text "all orders, no WHERE" "SELECT order__id FROM orders ORDER BY order__id"))
 (def ^:private insert-order (cellar/make-query-from-sql-text "insert order" "INSERT INTO orders (order__shop_id) VALUES (:order/shop-id)"))
@@ -77,15 +78,15 @@
   (run-sql! owner-pool "DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public; DROP SCHEMA IF EXISTS doorman CASCADE; DROP SCHEMA IF EXISTS cellar CASCADE")
   (run-sql! owner-pool "DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'doorman_app') THEN CREATE ROLE doorman_app LOGIN; END IF; END $$")
   (let [tables (into (doorman/put-gates-on-tables [shops orders] scope-kinds) (conj doorman/access-tables doorman/sessions-table))]
-    (doorman/install-access-functions! owner-pool)        ; before the gates: their policies call these
+    (doorman/install-access-functions! owner-pool [shops orders] scope-kinds)        ; before the gates: their policies call these
     (with-out-str @(:slow-part (cellar/migrate! owner-pool tables [] test-settings/migrate-options)))
     (cellar/grant-tables-to-role! owner-pool tables "doorman_app"))
   (run-sql! owner-pool (str "INSERT INTO shops VALUES ('" shop-7 "'), ('" shop-9 "')"))
   (run-sql! owner-pool (str "INSERT INTO orders VALUES ('" order-42 "', '" shop-7 "'), ('" order-99 "', '" shop-9 "')"))
   (cellar/run-in-transaction! owner-pool {:read-only? false}
     (fn [transaction]
-      (doorman/add-scope! transaction scope-kinds :shop shop-7 paul)
-      (doorman/add-scope! transaction scope-kinds :shop shop-9 bob)
+      (doorman/add-scope! transaction scope-kinds :shop shop-7 paul nil)
+      (doorman/add-scope! transaction scope-kinds :shop shop-9 bob nil)
       (doorman/add-membership! transaction [:shop shop-7] anna "Staff"))))
 
 (defn- start-pool! [user]
@@ -129,7 +130,7 @@
                                                                 :find-session-step (doorman/make-find-session-step app-pool settings)})
             server   (mailroom/start-server! (get-in (first (mailroom/make-routes-for-messages ready server-settings server-options)) [1 :post :handler])
                                               server-settings {:log log})
-            cookie   #(first (str/split (:set-cookie (doorman/sign-in! app-pool % settings)) #";"))]
+            cookie   #(first (str/split (:set-cookie (doorman/sign-in! app-pool {:headers {}} % {:settings settings :tables [] :session-flags #{}})) #";"))]
         (try
           (testing "the app's own role, which owns nothing, signs in and out, and the functions answer it"
             (let [request {:request-method :post :headers {"origin" "http://app.test" "cookie" (cookie anna)}}

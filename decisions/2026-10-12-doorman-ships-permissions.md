@@ -1,5 +1,7 @@
 # doorman ships permissions
 
+> **Built in part** (2026-10-23, v0.7.0): shape 2, a parent scope, by [A scope may sit under a parent scope](2026-10-23-a-scope-may-sit-under-a-parent-scope.md); shape 6, a session flag, by [A session flag and a scope's state may say no](2026-10-23-a-session-flag-and-a-scopes-state-may-say-no.md).
+
 > Moved from Groundwork (2026-10-22), where it was "Groundwork ships permissions": the permissions were a Groundwork part then and are doorman's now ("Groundwork" below is doorman where it means the permissions). Groundwork's copy keeps what it says of Groundwork as a whole.
 
 > **Changed in part** by [Who may see what is the app's; doorman enforces it](2026-10-15-who-may-see-what-is-the-apps.md) (2026-10-15): who may see and do what is the app's to say; doorman only enforces it.

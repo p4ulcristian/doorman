@@ -13,7 +13,8 @@
   (doorman/check-scope-kinds
    {:shop {:table   :shops
            :actions {:orders/see #{:read} :orders/edit #{:read :insert :update}}
-           :roles   {"Staff" #{:orders/see :orders/edit} "Bookkeeper" #{:orders/see}}}}))
+           :roles   {"Staff" #{:orders/see :orders/edit} "Bookkeeper" #{:orders/see}}
+           :parent nil :single? false :denies []}}))
 
 (def ^:private paul #uuid "00000000-0000-4000-8000-00000000000a")
 (def ^:private anna #uuid "00000000-0000-4000-8000-00000000000b")
@@ -24,10 +25,12 @@
 (deftest the-scope-kinds-are-checked
   (testing "a role naming an action its kind doesn't have"
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #"names :orders/fly"
-                          (doorman/check-scope-kinds {:shop {:actions {:orders/see #{:read}} :roles {"Pilot" #{:orders/fly}}}}))))
+                          (doorman/check-scope-kinds {:shop {:table nil :parent nil :single? false :denies []
+                                                                      :actions {:orders/see #{:read}} :roles {"Pilot" #{:orders/fly}}}}))))
   (testing "Owner is doorman's own"
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Owner"
-                          (doorman/check-scope-kinds {:shop {:actions {:orders/see #{:read}} :roles {"Owner" #{}}}})))))
+                          (doorman/check-scope-kinds {:shop {:table nil :parent nil :single? false :denies []
+                                                                      :actions {:orders/see #{:read}} :roles {"Owner" #{}}}})))))
 
 (deftest who-belongs-where
   (if-not port
@@ -38,7 +41,7 @@
         (with-out-str @(:slow-part (cellar/migrate! pool doorman/access-tables [] test-settings/migrate-options)))
         (cellar/run-in-transaction! pool {:read-only? false}
           (fn [transaction]
-            (doorman/add-scope! transaction scope-kinds :shop shop-7 paul)
+            (doorman/add-scope! transaction scope-kinds :shop shop-7 paul nil)
             (doorman/add-membership! transaction [:shop shop-7] anna "Staff")
             (doorman/add-membership! transaction [:shop shop-7] dora "Bookkeeper")))
         (testing "each person's actions, by scope"

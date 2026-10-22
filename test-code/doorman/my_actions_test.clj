@@ -21,7 +21,8 @@
    {:shop {:table   :shops
            :actions {:orders/see #{:read} :orders/edit #{:read :insert :update}
                      :posts/read #{:read} :profile/edit #{:read :update} :comments/write #{:insert}}
-           :roles   {"Staff" #{:orders/see :orders/edit}}}}))
+           :roles   {"Staff" #{:orders/see :orders/edit}}
+           :parent  nil :single? false :denies []}}))
 
 (def ^:private shops
   {:table :shops :columns [[:shop/id :uuid {:primary-key? true}]] :indexes [] :gates nil :on-change nil :access :public})
@@ -36,12 +37,12 @@
 
 (def ^:private posts
   {:table     :posts
-   :columns   [[:post/id :uuid {:primary-key? true}]]
+   :columns   [[:post/id :uuid {:primary-key? true}] [:post/status :string]]
    :indexes   []
    :gates     nil
    :on-change nil
    :access    [{:allow :posts/read :to :anyone}
-               {:allow :comments/write :to :signed-in}]})
+               {:allow :comments/write :to :signed-in :when [:= :post/status "open"]}]})
 
 (def ^:private profiles
   {:table     :profiles
@@ -59,7 +60,7 @@
 (def ^:private shop-7 #uuid "70000000-0000-4000-8000-000000000007")
 (def ^:private shop-9 #uuid "90000000-0000-4000-8000-000000000009")
 
-(def ^:private settings {:cookie-name "app_session" :session-days 1 :renew-after-minutes 60
+(def ^:private settings {:cookie-name "app_session" :session-days 1 :visitor-session-days 1 :renew-after-minutes 60
                          :allowed-origin "http://app.test" :secure-cookie? false})
 
 (def ^:private no-session-step {:name :no-session :enter identity})
@@ -104,15 +105,15 @@
                     (doorman/make-my-actions-handler {:pool pool :tables tables :scope-kinds scope-kinds
                                                       :find-session-step (doorman/make-find-session-step pool settings)
                                                       :rate-limit nil})}
-          cookie   #(first (str/split (:set-cookie (doorman/sign-in! pool % settings)) #";"))
+          cookie   #(first (str/split (:set-cookie (doorman/sign-in! pool {:headers {}} % {:settings settings :tables [] :session-flags #{}})) #";"))
           ask      #(ask-as handlers %1 %2)]
       (try
         (run-sql! pool "DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public; DROP SCHEMA IF EXISTS doorman CASCADE; DROP SCHEMA IF EXISTS cellar CASCADE")
         (with-out-str @(:slow-part (cellar/migrate! pool (into [shops doorman/sessions-table] doorman/access-tables) [] test-settings/migrate-options)))
         (cellar/run-in-transaction! pool {:read-only? false}
           (fn [transaction]
-            (doorman/add-scope! transaction scope-kinds :shop shop-9 paul)
-            (doorman/add-scope! transaction scope-kinds :shop shop-7 paul)
+            (doorman/add-scope! transaction scope-kinds :shop shop-9 paul nil)
+            (doorman/add-scope! transaction scope-kinds :shop shop-7 paul nil)
             (doorman/add-membership! transaction [:shop shop-7] anna "Staff")))
         (testing "Anna, Staff in shop 7: what is open to someone signed in, everywhere; her role's in shop 7"
           (is (= [{:scope-kind nil :scope-id nil :actions [:comments/write :posts/read :profile/edit]}

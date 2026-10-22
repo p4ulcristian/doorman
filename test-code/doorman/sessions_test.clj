@@ -12,9 +12,12 @@
 
 (def ^:private port (some-> (System/getenv "DOORMAN_TEST_PORT") parse-long))
 
-(def ^:private settings {:cookie-name "app_session" :session-days 30 :renew-after-minutes 60 :allowed-origin "https://app.test" :secure-cookie? true})
+(def ^:private settings {:cookie-name "app_session" :session-days 30 :visitor-session-days 2 :renew-after-minutes 60 :allowed-origin "https://app.test" :secure-cookie? true})
 
 (def ^:private anna #uuid "a0000000-0000-4000-8000-000000000001")
+
+(defn- sign-in! [pool person-id]
+  (doorman/sign-in! pool {:headers {}} person-id {:settings settings :tables [] :session-flags #{}}))
 
 (defn- make-request [set-cookie origin]
   {:request-method :post
@@ -38,6 +41,12 @@
     (is (= :doorman/bad-settings (:type errors)))
     (is (= #{:cookie-name :renew-after-minutes} (set (keys (:errors errors)))) "each missing one is named")))
 
+(deftest sign-in-s-options-are-required
+  (let [errors (try (doorman/sign-in! nil {} anna {:settings settings :tables []})
+                    (catch clojure.lang.ExceptionInfo e (ex-data e)))]
+    (is (= :doorman/bad-options (:type errors)))
+    (is (= #{:session-flags} (set (keys (:errors errors)))) "#{} written out for none")))
+
 (deftest the-session-key-reads-the-named-cookie
   (let [request {:headers {"cookie" "other=1; app_session=abc"}}]
     (is (= (cookie/turn-cookie-value-into-fingerprint "abc") (doorman/find-session-key-of-request request settings)))
@@ -54,7 +63,7 @@
       (try
         (cellar/run-statement! pool (cellar/make-query-from-sql-text "test" "DROP SCHEMA IF EXISTS doorman CASCADE; DROP SCHEMA IF EXISTS cellar CASCADE") {})
         (with-out-str @(:slow-part (cellar/migrate! pool [doorman/sessions-table] [] test-settings/migrate-options)))
-        (let [{:keys [set-cookie]} (doorman/sign-in! pool anna settings)]
+        (let [{:keys [set-cookie]} (sign-in! pool anna)]
           (testing "a signed-in request: the person is in the context, and in the message's log"
             (let [context (run-find-session step (make-request set-cookie "https://app.test"))]
               (is (= anna (:doorman/person-id context)))
@@ -70,7 +79,7 @@
             (doorman/sign-out! pool (make-request set-cookie "https://app.test") settings)
             (is (nil? (:doorman/person-id (run-find-session step (make-request set-cookie "https://app.test")))))))
         (testing "a session seen again lasts :session-days from then, once :renew-after-minutes have passed"
-          (let [{:keys [set-cookie]} (doorman/sign-in! pool anna settings)
+          (let [{:keys [set-cookie]} (sign-in! pool anna)
                 find-minutes-left #(:session/minutes-left
                                  (cellar/find-one-row pool (cellar/make-query-from-sql-text
                                                             "minutes left"
@@ -83,8 +92,37 @@
             (run-find-session step (make-request set-cookie "https://app.test"))
             (is (= (* 30 24 60) (find-minutes-left)) "seen after it: 30 days from now")
             (doorman/sign-out-everywhere! pool anna)))
+        (testing "a visitor's session: its id in the context and the log, no person, no flags"
+          (let [{:keys [visitor-id set-cookie]} (doorman/start-visitor-session! pool (make-request nil "https://app.test") settings)
+                context (run-find-session step (make-request set-cookie "https://app.test"))]
+            (is (uuid? visitor-id))
+            (is (= [nil visitor-id #{}] ((juxt :doorman/person-id :doorman/visitor-id :doorman/session-flags) context)))
+            (reset! test-log/lines [])
+            ((:mailroom/log context) :info :test/later-step {})
+            (is (= [{"visitor-id" (str visitor-id)}] (mapv #(get % "context") @test-log/lines)))
+            (is (re-find #"Max-Age=172800" set-cookie) ":visitor-session-days, 2")
+            (testing "it lasts :visitor-session-days from when it is seen again"
+              (run-sql! pool (str "UPDATE doorman.sessions SET session__ends_at = now() + interval '1 hour' WHERE session__visitor_id = '" visitor-id "'"))
+              (run-find-session step (make-request set-cookie "https://app.test"))
+              (is (= (* 2 24 60) (:session/minutes-left (cellar/find-one-row pool (cellar/make-query-from-sql-text
+                                                                                  "minutes left"
+                                                                                  (str "SELECT round(extract(epoch FROM session__ends_at - now()) / 60)::int AS session__minutes_left "
+                                                                                       "FROM doorman.sessions WHERE session__visitor_id = '" visitor-id "'"))
+                                                                             {})))))
+            (testing "signing in ends it, and a person's session carries its flags"
+              (let [signed-in (doorman/sign-in! pool (make-request set-cookie "https://app.test") anna
+                                                {:settings settings :tables [] :session-flags #{:impersonated}})]
+                (is (nil? (:doorman/visitor-id (run-find-session step (make-request set-cookie "https://app.test")))))
+                (is (= [anna nil #{:impersonated}]
+                       ((juxt :doorman/person-id :doorman/visitor-id :doorman/session-flags)
+                        (run-find-session step (make-request (:set-cookie signed-in) "https://app.test")))))
+                (testing "a key planted before a login is worthless after it"
+                  (doorman/sign-in! pool (make-request (:set-cookie signed-in) "https://app.test") anna
+                                    {:settings settings :tables [] :session-flags #{}})
+                  (is (nil? (:doorman/person-id (run-find-session step (make-request (:set-cookie signed-in) "https://app.test"))))))))
+            (doorman/sign-out-everywhere! pool anna)))
         (testing "signing out everywhere ends every session of the person"
-          (doorman/sign-in! pool anna settings)
-          (doorman/sign-in! pool anna settings)
+          (sign-in! pool anna)
+          (sign-in! pool anna)
           (is (= 2 (doorman/sign-out-everywhere! pool anna))))
         (finally (cellar/stop-pool! pool))))))

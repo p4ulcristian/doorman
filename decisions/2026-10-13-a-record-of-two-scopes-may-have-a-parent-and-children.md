@@ -1,5 +1,7 @@
 # A record of two scopes may have a parent and children
 
+> **Waits** for cellar: [Records under records wait for cellar's matching links](2026-10-23-records-under-records-wait-for-cellar.md) (2026-10-23).
+
 > Moved from Groundwork (2026-10-22): "Groundwork" there is doorman here where it means access. Who is rung for a row became doorbell's, which tells every open screen by table.
 
 > **Changed in part** by [Access rules are sentences in doorman's language](2026-10-17-access-rules-are-sentences-in-doormans-language.md) (2026-10-17): who sees and is rung for such a row is what the app's sentences say, not every side it carries.

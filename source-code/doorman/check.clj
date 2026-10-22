@@ -18,21 +18,21 @@
    allowed.\"; either way no step runs. Yes: the
    handler's steps, with :doorman/transaction in the context. A
    handler without a :record (a list, a new row, an email) runs only if the
-   person can have its action at all: held in some scope, or open to them
-   by a sentence; the gates decide which rows."
+   asker can have its action at all: open to them by a sentence (anyone,
+   anyone signed in, a visitor), or held somewhere (the action a [:member
+   …] needs); otherwise \"Not found.\". A session flag a deny names
+   answers \"Not allowed.\". The gates decide which rows."
   (:require
    [clojure.string :as str]
    [cellar.api :as cellar]
+   [doorman.asking :as asking]
    [doorman.scope-kinds :as scope-kinds]
    [doorman.sentences :as sentences]
-   [mailroom.api :as mailroom]
-   [jsonista.core :as json]))
+   [mailroom.api :as mailroom]))
 
 (def ^:private not-found {:error "Not found."})
 
 (def ^:private not-allowed {:error "Not allowed."})
-
-(def ^:private set-asking (cellar/make-query-from-sql-file "doorman/set_asking.sql"))
 
 (defn- find-problems-of-handler
   "Doorman's own keys, and mailroom's written out: :steps, :rate-limit
@@ -77,33 +77,39 @@
      (str "SELECT EXISTS (" row " AND (" (get-in conditions [table-key :actions action]) ")) AS allowed, "
           "EXISTS (" row " AND (" (get-in conditions [table-key :operations :read]) ")) AS visible"))))
 
-(defn- find-reach-of-action
-  "How an action can be had without a membership, from the sentences that
-   allow it: :anyone (everyone), :signed-in (anyone signed in: :signed-in
-   or [:me column] sentences), or nil (only through a scope's role)."
-  [tables action]
-  (let [{:keys [anyone signed-in]} (sentences/find-open-actions tables)]
-    (cond (contains? anyone action)    :anyone
-          (contains? signed-in action) :signed-in)))
+(defn find-flag-deny
+  "The deny a session's flags say no to an action with, or nil."
+  [scope-kinds action session-flags]
+  (first (filter #(and (:session %) (contains? session-flags (:session %))
+                       (scope-kinds/does-deny-apply? % action nil))
+                 (scope-kinds/find-denies scope-kinds))))
+
+(defn does-way-hold?
+  "Whether one way of having an action (sentences/find-way-of-sentence)
+   holds for the asker: open to anyone, to anyone signed in, to a
+   visitor, or to someone holding an action somewhere."
+  [way {:doorman/keys [person-id visitor-id actions]}]
+  (cond (= :anyone way)    true
+        (= :signed-in way) (some? person-id)
+        (= :visitor way)   (and (nil? person-id) (some? visitor-id))
+        (vector? way)      (boolean (some #(contains? % (second way)) (vals actions)))
+        :else              false))
 
 (defn- may-person-have-action?
-  "For a handler without a :record: whether the person can have its action
-   at all: held in some scope, or open to them by a sentence. Which rows,
-   the gates decide."
-  [reach action context]
-  (or (= :anyone reach)
-      (and (= :signed-in reach) (some? (:doorman/person-id context)))
-      (some #(contains? % action) (vals (:doorman/actions context)))))
+  "For a handler without a :record: whether the asker can have its action
+   at all, by one of its ways. Which rows, the gates decide."
+  [ways context]
+  (boolean (some #(does-way-hold? % context) ways)))
 
 (defn- find-reach-of-record
   "{:allowed bool :visible bool} for the record the message names."
   [query record context]
   (cellar/find-one-row (:doorman/transaction context) query
-                         {:record/id (get-in context [:mailroom/message-data (second record)])}))
+                       {:record/id (get-in context [:mailroom/message-data (second record)])}))
 
-(defn- make-check-step [{:keys [tables] :as setup} {:keys [record action] :as handler}]
+(defn- make-check-step [{:keys [tables scope-kinds] :as setup} {:keys [record action] :as handler}]
   (let [query (when record (make-record-query setup handler))
-        reach (find-reach-of-action tables action)]
+        ways  (get (sentences/find-ways-of-actions tables) action #{})]
     {:name  :doorman/check
      :enter (fn [context]
               (if query
@@ -111,20 +117,11 @@
                   (cond allowed context
                         visible (mailroom/add-answer-to-context context not-allowed)
                         :else   (mailroom/add-answer-to-context context not-found)))
-                (if (may-person-have-action? reach action context)
-                  context
-                  (mailroom/add-answer-to-context context not-found))))}))
-
-(defn- turn-actions-into-asking
-  "Who is asking, as the JSON text access's SQL functions read from
-   doorman.asking."
-  [person-id actions-by-scope]
-  (json/write-value-as-string
-   {:person  (some-> person-id str)
-    :holding (reduce (fn [holding [[kind scope-id] actions]]
-                       (reduce #(update %1 (str (name kind) " " (subs (str %2) 1)) (fnil conj []) (str scope-id))
-                               holding actions))
-                     {} actions-by-scope)}))
+                (cond (not (may-person-have-action? ways context))
+                      (mailroom/add-answer-to-context context not-found)
+                      (find-flag-deny scope-kinds action (:doorman/session-flags context))
+                      (mailroom/add-answer-to-context context not-allowed)
+                      :else context)))}))
 
 (defn- does-action-only-read?
   "An action that does nothing but :read runs in a read-only transaction:
@@ -138,13 +135,13 @@
       (if (mailroom/does-context-have-answer? context)
         context
         (cellar/run-in-transaction! pool {:read-only? (does-action-only-read? setup action)}
-          (fn [transaction]
-            (let [person-id (:doorman/person-id context)
-                  actions   (if person-id (list-actions transaction person-id) {})]
-              (cellar/find-one-row transaction set-asking {:asking (turn-actions-into-asking person-id actions)})
-              (run (assoc context
-                          :doorman/transaction transaction
-                          :doorman/actions actions)))))))))
+                                    (fn [transaction]
+                                      (let [{:doorman/keys [person-id visitor-id session-flags]} context
+                                            actions (if person-id (list-actions transaction person-id) {})]
+                                        (asking/set-asking! transaction {:person-id person-id :visitor-id visitor-id :session-flags session-flags} actions)
+                                        (run (assoc context
+                                                    :doorman/transaction transaction
+                                                    :doorman/actions actions)))))))))
 
 (defn put-access-into-handlers
   "Every handler checked, then given the check in front of its steps and the

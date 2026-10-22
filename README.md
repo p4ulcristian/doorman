@@ -4,11 +4,15 @@ Who is asking, and what may they do: the door of a Clojure app on
 Postgres. **Who is asking:** a session is a row in Postgres; the browser's
 cookie holds only random bytes, the table only their fingerprint. The app's
 own login proves who someone is and calls `sign-in!`; signing out deletes
-rows, so access ends at once on every server. **What may they do:** the
-app's kinds of scope (a shop) with their actions and roles; scopes, roles
-and memberships as rows; the `:access` sentences on table maps turned into
-one SQL condition per action; the check in front of every handler; the
-gates (Postgres's row rules) from the same conditions; and the leak test.
+rows, so access ends at once on every server. A visitor (not signed in)
+gets a session of their own when the app first keeps something for them;
+their rows become the person's at sign-in. **What may they do:** the
+app's kinds of scope (a shop under a company, a back office of one scope)
+with their actions, roles and denies; scopes, roles and memberships as
+rows; the `:access` sentences on table maps turned into one SQL condition
+per action; the check in front of every handler; the gates (Postgres's
+row rules) from the same conditions; the leak test; and why a message
+would be refused, as data.
 
 ```clojure
 io.github.p4ulcristian/doorman {:git/tag "v0.6.0" :git/sha "4097e8f"}
@@ -32,20 +36,22 @@ step's lines say who asked
 |---|---|---|
 | who | `settings-shape` | the settings as a malli shape, every key required |
 | who | `sessions-table` | its table, `doorman.sessions`, as a map for cellar |
-| who | `sign-in!` `sign-out!` `sign-out-everywhere!` | a session made for a proven person (the Set-Cookie text back); ended at once |
+| who | `sign-in!` `sign-out!` `sign-out-everywhere!` | a session made for a proven person, with its flags (the Set-Cookie text back), a visitor's rows moved to them and the request's old session ended, in one transaction; ended at once |
+| who | `start-visitor-session!` | a session for a visitor, on the app's own route: its id, which the rows kept for them name, and the Set-Cookie text |
 | who | `delete-ended-sessions!` | forgets ended sessions; for a nightly background job |
-| who | `make-find-session-step` | the step first in a handler: the Origin checked, `:doorman/person-id` in the context and the person in `:mailroom/log` |
+| who | `make-find-session-step` | the step first in a handler: the Origin checked, `:doorman/person-id`, `:doorman/visitor-id` and `:doorman/session-flags` in the context, the person or visitor in `:mailroom/log` |
 | who | `find-session-key-of-request` | a hash of the session cookie, for rate limits |
 | what | `access-tables` | its tables, `doorman.scopes` `doorman.roles` `doorman.role_actions` `doorman.memberships` |
-| what | `check-scope-kinds` | the app's kinds of scope, checked |
+| what | `check-scope-kinds` | the app's kinds of scope, checked, every key written out |
 | what | `does-action-only-read?` | whether an action only reads (its handlers run read-only); every other one's may write |
-| what | `add-scope!` `add-role!` `add-membership!` `remove-membership!` `list-actions-of-person` | who belongs where; a scope's founder is its Owner, holding every action |
-| what | `make-my-actions-handler` `my-actions-answer-shape` (the shape on both sides: `doorman.api`'s `.cljs` half has it too) | "what may I do?" for the browser: the asker's actions by scope, and the open ones (`:anyone`; `:signed-in` and `[:me …]` when signed in) under nil kind and id, every scope; read-only, as the asker |
-| what | `make-sql-conditions` | the sentences, checked, as SQL: one condition per action and per operation |
-| what | `install-access-functions!` | `doorman.find_asking_person()` and `doorman.find_scopes_holding(kind, action)`, before migrate |
+| what | `add-scope!` `add-role!` `add-membership!` `remove-membership!` `list-actions-of-person` | who belongs where; a scope under its parent scope; a scope's founder is its Owner, holding every action of its kind and below; a membership counts in the scopes below |
+| what | `make-my-actions-handler` `my-actions-answer-shape` (the shape on both sides: `doorman.api`'s `.cljs` half has it too) | "what may I do?" for the browser: the asker's actions by scope, and the open ones under nil kind and id, every scope; the denies taken out; read-only, as the asker |
+| what | `make-sql-conditions` | the sentences, checked, as SQL: one condition per action and per operation, the denies in them |
+| what | `install-access-functions!` | the SQL functions the check and the gates call, and those the app's sentences and denies need (a `:via`'s, a scope state's, the guard's, `doorman."may <action> on <table>"()`), before migrate |
 | what | `put-access-into-handlers` | the check in front of every handler's steps, which run in a transaction that knows who is asking |
 | what | `put-gates-on-tables` | the table maps with their gates, `:gates nil` on the ungated ones, for cellar |
 | what | `find-leaks` | the leak test, for the app's own tests, by the app's wire and log (`:wire`, `:log`) |
+| what | `explain-refusal` | why a message would be refused, as data: the check's answer, the record's scopes, the asker's roles and actions there, each sentence's parts and the denies; read-only, for a REPL |
 
 Nothing has a default: every setting and option is written out; a missing
 one refuses, named, with every other problem at once. A handler writes out
@@ -58,29 +64,50 @@ every key mailroom reads (`:steps :params-shape :answer-shape :rate-limit
          '[cellar.api :as cellar])
 
 (def settings
-  {:cookie-name         "app_session"               ; one per app: cookies don't tell ports apart
-   :session-days        30                          ; a session unseen this long ends
-   :renew-after-minutes 60                          ; a session seen again is pushed out at most this often
-   :allowed-origin      "https://shop.example"      ; a request that changes something must come from here
-   :secure-cookie?      true})                      ; false only over plain http, in development
+  {:cookie-name          "app_session"              ; one per app: cookies don't tell ports apart
+   :session-days         30                         ; a person's session unseen this long ends
+   :visitor-session-days 7                          ; a visitor's too; then their rows are nobody's
+   :renew-after-minutes  60                         ; a session seen again is pushed out at most this often
+   :allowed-origin       "https://shop.example"     ; a request that changes something must come from here
+   :secure-cookie?       true})                     ; false only over plain http, in development
 
 (def scope-kinds
   (doorman/check-scope-kinds
-   {:shop {:table   :shops
-           :actions {:orders/see #{:read} :orders/edit #{:read :insert :update}}
-           :roles   {"Staff" #{:orders/see :orders/edit} "Bookkeeper" #{:orders/see}}}}))
+   {:company  {:table :companies :parent nil :single? false
+               :actions {:company/report #{:read}}
+               :roles   {"Director" #{:company/report :orders/see}}      ; a kind below's action: in each shop
+               :denies  []}
+    :shop     {:table :shops :parent :company :single? false
+               :actions {:orders/see #{:read} :orders/edit #{:read :insert :update}}
+               :roles   {"Staff" #{:orders/see :orders/edit} "Bookkeeper" #{:orders/see}}
+               :denies  [{:deny :writes :session :impersonated}                  ; an admin acting as someone
+                         {:deny :writes :when [:= :shop/status "suspended"]}]}  ; keeps its reads
+    :platform {:table nil :parent nil :single? true                              ; exactly one scope
+               :actions {:platform/support #{:read}} :roles {"Support" #{:platform/support}} :denies []}}))
 
 (def orders                                         ; :gates comes from put-gates-on-tables
   {:table     :orders
-   :columns   [[:order/id :uuid {:primary-key? true}] [:order/shop-id :uuid {:references :shop/id}]]
-   :indexes   []
+   :columns   [[:order/id :uuid {:primary-key? true}]
+               [:order/shop-id :uuid {:references :shop/id}]
+               [:order/customer-id :uuid {:optional? true}]
+               [:order/visitor-id :uuid {:optional? true}]
+               [:order/status :string]]
+   :indexes   [[:order/shop-id]]
    :on-change nil
-   :access    [{:allow #{:orders/see :orders/edit} :to [:member :order/shop-id]}]})
+   :visitor   {:column :order/visitor-id :moves-to :order/customer-id}   ; moved at sign-in
+   :access    [{:allow #{:orders/see :orders/edit} :to [:member :order/shop-id]}
+               {:allow #{:orders/see :orders/edit} :to [:me :order/customer-id]}
+               {:allow #{:orders/see :orders/edit} :to [:me :order/visitor-id]}    ; the visitor asking
+               {:allow :orders/see :to [:member :platform :platform/support]}
+               {:allow :orders/see :via {:table :agreements                         ; a related row exists
+                                         :match {:order/shop-id :agreement/shop-id}
+                                         :to    [:member :agreement/partner-id :agreements/see]
+                                         :when  [:= :agreement/status "active"]}}]})
 
 ;; the deploy, as the role that owns the tables
-(let [tables (into (doorman/put-gates-on-tables [shops orders] scope-kinds)
+(let [tables (into (doorman/put-gates-on-tables app-tables scope-kinds)
                    (conj doorman/access-tables doorman/sessions-table))]
-  (doorman/install-access-functions! owner-pool)    ; before the gates: they call these
+  (doorman/install-access-functions! owner-pool app-tables scope-kinds)   ; before the gates: they call these
   (cellar/migrate! owner-pool tables changes migrate-options)   ; cellar's time limits for each part
   (cellar/grant-tables-to-role! owner-pool tables "app"))   ; the folder doorman too
 
@@ -94,24 +121,45 @@ every key mailroom reads (`:steps :params-shape :answer-shape :rate-limit
                  :rate-limit   nil                               ; mailroom's, nil for none
                  :run-steps-in nil                               ; nil: doorman's transaction runs them
                  :steps        [find-order add-order-answer]}}   ; they use (:doorman/transaction context)
-   {:pool app-pool :tables [shops orders] :scope-kinds scope-kinds
+   {:pool app-pool :tables app-tables :scope-kinds scope-kinds
     :find-session-step (doorman/make-find-session-step app-pool settings)}))
 
-;; at the end of the app's own login
 ;; "what may I do?", for the browser (parlor's "can I?"), as the asker, read-only
 (def handlers-with-my-actions
   (assoc ready :doorman/my-actions
-         (doorman/make-my-actions-handler {:pool app-pool :tables [shops orders] :scope-kinds scope-kinds
+         (doorman/make-my-actions-handler {:pool app-pool :tables app-tables :scope-kinds scope-kinds
                                            :find-session-step (doorman/make-find-session-step app-pool settings)
                                            :rate-limit {:max 60 :per-ms 60000}})))   ; or nil
 ;=> [{:scope-kind nil :scope-id nil :actions […]} {:scope-kind :shop :scope-id #uuid "…" :actions [:orders/edit :orders/see]}]
 
-(let [{:keys [set-cookie]} (doorman/sign-in! app-pool person-id settings)]
+;; a visitor, on the app's own route, the first time it keeps something for them
+(let [{:keys [visitor-id set-cookie]} (doorman/start-visitor-session! app-pool request settings)]
+  …)   ; the cart's row names visitor-id; set-cookie is nil when the request had a session already
+
+;; at the end of the app's own login: the visitor's rows become the person's
+(let [{:keys [set-cookie]} (doorman/sign-in! app-pool request person-id
+                                             {:settings settings :tables app-tables :session-flags #{}})]
   {:status 302 :headers {"location" "/" "set-cookie" set-cookie}})
+
+;; in the REPL: why would Anna's message be refused?
+(doorman/explain-refusal {:pool app-pool :handlers handlers :tables app-tables :scope-kinds scope-kinds}
+                         {:person-id anna :visitor-id nil :session-flags #{}}
+                         :orders/one {:order/id order-in-another-shop})
+;=> {:answer :not-found :record {…} :memberships […] :sentences [{… :to {:holds? false :needs :orders/see …}}] :denies […]}
 
 ;; in the app's tests, with the app's wire (wire.api's make-wire-from-settings) and log (logbook's)
 (is (= [] (doorman/find-leaks ready anna-request {:orders [order-in-another-shop]} {:wire wire :log log :seed 7 :size 30})))
 ```
+
+The words of a sentence: `:to` is `:anyone`, `:signed-in`, `[:member
+column]` or `[:member <kind of one scope>]` (either with the action held
+there as a third element), `[:me column]` (the person, or the visitor for
+the table's `:visitor` column), or `:via {…}` instead of `:to`; `:when` is
+`[:= col v]`, `[:not= col v]`, `[:in col [vs]]`, `[:none col]`, `[:and …]`,
+`[:or …]`. A list narrowed to the rows the asker may do an action on:
+`WHERE order__id IN (SELECT * FROM doorman."may orders/edit on orders"())`.
+A record's parent (a job carrying its order's shop) waits for cellar
+([why](decisions/2026-10-23-records-under-records-wait-for-cellar.md)).
 
 ## Tests
 
@@ -126,7 +174,9 @@ pg_ctl -D /tmp/doorman-pg stop
 ```
 
 A gate refusing a row and a write in a read-only transaction log their
-errors during the tests; that is expected.
+errors during the tests; that is expected. The tests need a superuser
+for `DOORMAN_TEST_USER` (it makes the role `doorman_app`, which owns
+nothing, and writes the test rows past the gates).
 
 Why it is the way it is: [`decisions/`](decisions/README.md).
 

@@ -1,5 +1,7 @@
 # access, piece 3: the check, put in front of every handler
 
+> **Added to** by [A session flag and a scope's state may say no](2026-10-23-a-session-flag-and-a-scopes-state-may-say-no.md) and [Visitors get sessions of their own](2026-10-23-visitors-get-sessions-and-their-rows-move-at-sign-in.md) (2026-10-23, v0.7.0): who is asking carries the visitor and the session's flags; a handler without a `:record` runs for an asker who can have its action by a way (open, a visitor's, an action held somewhere) and answers "Not allowed." when a session flag denies it.
+
 > **Changed in part** by [A handler writes out mailroom's keys, and its :run-steps-in is nil](2026-10-22-a-handler-writes-out-mailrooms-keys.md) (2026-10-22, v0.1.1): a handler also writes out `:rate-limit` and `:run-steps-in`, and `:run-steps-in` must be nil.
 
 > **Changed in part** by [doorman is its own library](2026-10-22-doorman-is-its-own-library.md) (2026-10-22): who is asking is the setting `doorman.asking`; the steps' transaction is at `:doorman/transaction`; `put-access-into-handlers`'s options are checked, every key required.

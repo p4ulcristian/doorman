@@ -1,5 +1,7 @@
 # Access rules are sentences in doorman's language
 
+> **Built** in doorman v0.7.0 (2026-10-23): `:via` and its guard, the denies, a kind of one scope, `[:member … action]`, the visitor's `[:me …]` and the functions narrowing a list (see the decisions of 2026-10-23); a record kind's `:parent` waits ([Records under records wait for cellar's matching links](2026-10-23-records-under-records-wait-for-cellar.md)).
+
 > Moved from Groundwork (2026-10-22), where it was "Access rules are sentences in Groundwork's language": the words and what is made from them were Groundwork's then and are doorman's now. Who is rung became doorbell's, which tells every open screen by table (doorbell's "sync tells by table and trusts the gates"); the browser's "can I?" is not built. Groundwork's copy keeps those parts.
 
 > **Changed in part** by Groundwork's "A table is one map" (2026-10-22): a table's sentences sit on its map, and its record kind (table, id, whose, parent) is read from the map.

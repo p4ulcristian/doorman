@@ -18,7 +18,8 @@
 
 (def ^:private scope-kinds
   (doorman/check-scope-kinds
-   {:shop {:table :shops :actions {:orders/see #{:read}} :roles {"Staff" #{:orders/see}}}}))
+   {:shop {:table :shops :parent nil :single? false :denies []
+           :actions {:orders/see #{:read}} :roles {"Staff" #{:orders/see}}}}))
 
 (def ^:private shops
   {:table     :shops
@@ -44,7 +45,7 @@
 (def ^:private order-42 #uuid "42000000-0000-4000-8000-000000000042")
 (def ^:private order-99 #uuid "99000000-0000-4000-8000-000000000099")
 
-(def ^:private settings {:cookie-name "app_session" :session-days 1 :renew-after-minutes 60 :allowed-origin "http://app.test" :secure-cookie? false})
+(def ^:private settings {:cookie-name "app_session" :session-days 1 :visitor-session-days 1 :renew-after-minutes 60 :allowed-origin "http://app.test" :secure-cookie? false})
 
 (def ^:private answer-the-order
   {:name  :answer-the-order
@@ -83,13 +84,13 @@
 (defn- make-database! [pool]
   (run-sql! pool "DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public; DROP SCHEMA IF EXISTS doorman CASCADE; DROP SCHEMA IF EXISTS cellar CASCADE")
   (with-out-str @(:slow-part (cellar/migrate! pool (into [shops orders doorman/sessions-table] doorman/access-tables) [] test-settings/migrate-options)))
-  (doorman/install-access-functions! pool)
+  (doorman/install-access-functions! pool [shops orders] scope-kinds)
   (run-sql! pool (str "INSERT INTO shops VALUES ('" shop-7 "'), ('" shop-9 "')"))
   (run-sql! pool (str "INSERT INTO orders VALUES ('" order-42 "', '" shop-7 "'), ('" order-99 "', '" shop-9 "')"))
   (cellar/run-in-transaction! pool {:read-only? false}
     (fn [transaction]
-      (doorman/add-scope! transaction scope-kinds :shop shop-7 paul)
-      (doorman/add-scope! transaction scope-kinds :shop shop-9 bob)
+      (doorman/add-scope! transaction scope-kinds :shop shop-7 paul nil)
+      (doorman/add-scope! transaction scope-kinds :shop shop-9 bob nil)
       (doorman/add-membership! transaction [:shop shop-7] anna "Staff"))))
 
 (def ^:private server-settings
@@ -147,7 +148,7 @@
                                                             :find-session-step (doorman/make-find-session-step pool settings)})
           server (mailroom/start-server! (get-in (first (mailroom/make-routes-for-messages ready server-settings server-options)) [1 :post :handler])
                                           server-settings {:log log})
-          cookie #(first (str/split (:set-cookie (doorman/sign-in! pool % settings)) #";"))]
+          cookie #(first (str/split (:set-cookie (doorman/sign-in! pool {:headers {}} % {:settings settings :tables [] :session-flags #{}})) #";"))]
       (try
         (make-database! pool)
         (let [anna-cookie (cookie anna)]
@@ -180,7 +181,8 @@
 
 (deftest an-action-that-only-reads
   (let [kinds (doorman/check-scope-kinds
-               {:shop {:table :shops :actions {:orders/see #{:read} :orders/edit #{:read :update}} :roles {}}})]
+               {:shop {:table :shops :parent nil :single? false :denies []
+                       :actions {:orders/see #{:read} :orders/edit #{:read :update}} :roles {}}})]
     (is (true? (doorman/does-action-only-read? kinds :orders/see)) "runs read-only")
     (is (false? (doorman/does-action-only-read? kinds :orders/edit)) "may write")
     (is (false? (doorman/does-action-only-read? kinds :orders/unknown)) "no kind has it")))

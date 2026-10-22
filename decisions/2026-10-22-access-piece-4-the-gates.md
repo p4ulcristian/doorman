@@ -1,5 +1,7 @@
 # access, piece 4: the gates
 
+> **Added to** by [doorman reads past its gates only inside its own functions](2026-10-23-doorman-reads-past-its-gates-only-inside-its-own-functions.md), [Visitors get sessions of their own](2026-10-23-visitors-get-sessions-and-their-rows-move-at-sign-in.md) and [:via reads related rows through a function](2026-10-23-via-reads-related-rows-through-a-function-and-guards-what-they-match.md) (2026-10-23, v0.7.0): every read gate lets doorman's own functions read; a table with a `:visitor` column lets sign-in's move through; a table a via reads guards what it matches; `install-access-functions!` takes the tables and the scope kinds.
+
 > **Changed in part** by [doorman is its own library](2026-10-22-doorman-is-its-own-library.md) (2026-10-22): the gates' functions are in the folder doorman; cellar's `grant-tables-to-role!`, given doorman's tables, lets the app's own role use that folder and call them.
 
 > Builds on [doorman ships permissions](2026-10-12-doorman-ships-permissions.md) (the Postgres wall), Groundwork's "Production migrates before it starts" and Groundwork's "Groundwork's own tables are table maps, in their own folder".
