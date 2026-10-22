@@ -2,7 +2,7 @@
 
 > **Changed in part** by [doorman is its own library](2026-10-22-doorman-is-its-own-library.md) (2026-10-22): the rows are in doorman's folder: `doorman.scopes`, `doorman.roles`, `doorman.role_actions`, `doorman.memberships`; Owner stays.
 
-> Builds on Groundwork's "Groundwork ships permissions" and Groundwork's "Access rules are sentences in Groundwork's language".
+> Builds on [doorman ships permissions](2026-10-12-doorman-ships-permissions.md) and [Access rules are sentences in doorman's language](2026-10-17-access-rules-are-sentences-in-doormans-language.md).
 
 **Decision:**
 

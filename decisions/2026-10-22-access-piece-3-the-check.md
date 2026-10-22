@@ -6,7 +6,7 @@
 
 > **Added to** on 2026-10-22: a handler without a `:record` (a list, a new row, an email) runs only if the person can have its action at all: held in some scope, or open to them by an `:anyone`, `:signed-in` or `[:me …]` sentence; otherwise "Not found.". Which rows, the gates decide.
 
-> Builds on Groundwork's "Groundwork ships permissions", Groundwork's "What every endpoint declares" and [Ring at the edge, steps inside](https://github.com/p4ulcristian/mailroom/blob/main/decisions/2026-10-22-ring-at-the-edge-steps-inside.md).
+> Builds on [doorman ships permissions](2026-10-12-doorman-ships-permissions.md), Groundwork's "What every endpoint declares" and [Ring at the edge, steps inside](https://github.com/p4ulcristian/mailroom/blob/main/decisions/2026-10-22-ring-at-the-edge-steps-inside.md).
 
 **Decision:**
 

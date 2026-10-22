@@ -1,6 +1,6 @@
 # Shared rows may belong to nobody
 
-> Replaces Groundwork's "Shared rows have an owner", following Groundwork's "Who may see what is the app's". Decided while Groundwork was frozen; built as the `[:none <column>]` word of Groundwork's "the access language".
+> Replaces Groundwork's "Shared rows have an owner", following [Who may see what is the app's](2026-10-15-who-may-see-what-is-the-apps.md). Decided while Groundwork was frozen; built as the `[:none <column>]` word of Groundwork's "the access language".
 
 **Decision:** a row every scope reads (a catalogue the platform keeps for everyone) doesn't have to be given to a scope. It can stay universal: no owner. Who may read such rows and who may change them is the app's to say, like every other access rule.
 

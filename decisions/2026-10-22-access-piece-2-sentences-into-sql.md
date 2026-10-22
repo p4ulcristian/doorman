@@ -2,7 +2,7 @@
 
 > **Changed in part** by [doorman is its own library](2026-10-22-doorman-is-its-own-library.md) (2026-10-22): the functions are `doorman.find_scopes_holding(kind, action)` and `doorman.find_asking_person()`.
 
-> Builds on Groundwork's "Access rules are sentences in Groundwork's language" and Groundwork's "A table is one map".
+> Builds on [Access rules are sentences in doorman's language](2026-10-17-access-rules-are-sentences-in-doormans-language.md) and Groundwork's "A table is one map".
 
 **Decision:** a table map's `:access` sentences become one SQL condition per action (the sentences joined by OR) and one per operation (read, insert, update, delete: the actions that do it, joined by OR; `false` when none does). `make-sql-conditions` checks every table's sentences first and throws with every problem at once: an action no scope kind has, a column the table doesn't have, an open write (`:anyone` or `:signed-in` given a writing action without a `:when`).
 

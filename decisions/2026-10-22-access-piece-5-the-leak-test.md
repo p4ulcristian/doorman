@@ -2,7 +2,7 @@
 
 > **Changed in part** by [doorman is its own library](2026-10-22-doorman-is-its-own-library.md) (2026-10-22): `find-leaks` takes options, `{:seed … :size …}`, both required (seed 7 and malli's size 30 before, unwritten).
 
-> Builds on Groundwork's "Groundwork ships permissions" (the built-in leak test).
+> Builds on [doorman ships permissions](2026-10-12-doorman-ships-permissions.md) (the built-in leak test).
 
 **Decision:** `find-leaks` is for an app's own tests. Given its handlers (made ready by `put-access-into-handlers`), a request signed in as a person of one scope, and the ids of another scope's rows by table, it asks every handler: one with a `:record` is asked for each foreign row and must answer "Not found."; any other is asked once and its answer must hold none of the foreign ids. The other params come from the handler's `:params-shape`, by malli's generator. It returns every leak; empty means none. transport's `answer-message` answers a message without a server, which the leak test uses.
 

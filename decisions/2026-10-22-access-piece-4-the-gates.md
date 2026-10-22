@@ -2,7 +2,7 @@
 
 > **Changed in part** by [doorman is its own library](2026-10-22-doorman-is-its-own-library.md) (2026-10-22): the gates' functions are in the folder doorman; cellar's `grant-tables-to-role!`, given doorman's tables, lets the app's own role use that folder and call them.
 
-> Builds on Groundwork's "Groundwork ships permissions" (the Postgres wall), Groundwork's "Production migrates before it starts" and Groundwork's "Groundwork's own tables are table maps, in their own folder".
+> Builds on [doorman ships permissions](2026-10-12-doorman-ships-permissions.md) (the Postgres wall), Groundwork's "Production migrates before it starts" and Groundwork's "Groundwork's own tables are table maps, in their own folder".
 
 **Decision:**
 
