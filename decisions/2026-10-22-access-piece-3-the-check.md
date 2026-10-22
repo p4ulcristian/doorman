@@ -1,5 +1,7 @@
 # access, piece 3: the check, put in front of every handler
 
+> **Changed in part** by [A handler writes out mailroom's keys, and its :run-steps-in is nil](2026-10-22-a-handler-writes-out-mailrooms-keys.md) (2026-10-22, v0.1.1): a handler also writes out `:rate-limit` and `:run-steps-in`, and `:run-steps-in` must be nil.
+
 > **Changed in part** by [doorman is its own library](2026-10-22-doorman-is-its-own-library.md) (2026-10-22): who is asking is the setting `doorman.asking`; the steps' transaction is at `:doorman/transaction`; `put-access-into-handlers`'s options are checked, every key required.
 
 > **Added to** on 2026-10-22: a handler without a `:record` (a list, a new row, an email) runs only if the person can have its action at all: held in some scope, or open to them by an `:anyone`, `:signed-in` or `[:me …]` sentence; otherwise "Not found.". Which rows, the gates decide.

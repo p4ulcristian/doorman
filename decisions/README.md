@@ -19,10 +19,11 @@ All but the last were made while doorman was two libraries inside Groundwork, a 
 - [One request may name several scopes](2026-10-18-one-request-may-name-several-scopes.md)
 - [access, piece 1: who belongs where](2026-10-22-access-piece-1-who-belongs-where.md), changed in part by [doorman is its own library](2026-10-22-doorman-is-its-own-library.md)
 - [access, piece 2: sentences into SQL conditions](2026-10-22-access-piece-2-sentences-into-sql.md), changed in part by [doorman is its own library](2026-10-22-doorman-is-its-own-library.md)
-- [access, piece 3: the check, put in front of every handler](2026-10-22-access-piece-3-the-check.md), changed in part by [doorman is its own library](2026-10-22-doorman-is-its-own-library.md)
+- [access, piece 3: the check, put in front of every handler](2026-10-22-access-piece-3-the-check.md), changed in part by [doorman is its own library](2026-10-22-doorman-is-its-own-library.md) and [A handler writes out mailroom's keys](2026-10-22-a-handler-writes-out-mailrooms-keys.md)
 - [access, piece 4: the gates](2026-10-22-access-piece-4-the-gates.md), changed in part by [doorman is its own library](2026-10-22-doorman-is-its-own-library.md)
 - [access, piece 5: the leak test](2026-10-22-access-piece-5-the-leak-test.md), changed in part by [doorman is its own library](2026-10-22-doorman-is-its-own-library.md)
 
 ## The library
 
 - [doorman is its own library](2026-10-22-doorman-is-its-own-library.md)
+- [A handler writes out mailroom's keys, and its :run-steps-in is nil](2026-10-22-a-handler-writes-out-mailrooms-keys.md)

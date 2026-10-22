@@ -44,15 +44,18 @@
 
 (def ^:private handlers
   {:orders/all   {:action :orders/see :params-shape [:map] :answer-shape [:vector :uuid]
+                  :rate-limit nil :run-steps-in nil
                   :steps  [{:name  :answer-all-orders
                             :enter #(mailroom/add-answer-to-context
                                      % (mapv :order/id (cellar/find-rows (:doorman/transaction %) find-all-orders {})))}]}
    :orders/sneak {:action :orders/see :params-shape [:map [:order/shop-id :uuid]] :answer-shape [:map]
+                  :rate-limit nil :run-steps-in nil
                   :steps  [{:name  :insert-order-while-only-seeing
                             :enter #(do (cellar/run-statement! (:doorman/transaction %) insert-order
                                                                  (:mailroom/message-data %))
                                         (mailroom/add-answer-to-context % {}))}]}
    :orders/place {:action :orders/edit :params-shape [:map [:order/shop-id :uuid]] :answer-shape [:map]
+                  :rate-limit nil :run-steps-in nil
                   :steps  [{:name  :insert-order
                             :enter #(do (cellar/run-statement! (:doorman/transaction %) insert-order
                                                             (:mailroom/message-data %))
@@ -89,9 +92,11 @@
 
 (def ^:private server-settings
   "mailroom's settings: three addresses, no proxy in front."
-  {:ip "127.0.0.1" :port 0 :client-address-header nil
+  {:ip "127.0.0.1" :port 0 :proxy-protocol :disable :client-address-header nil :server-header nil
+   :max-body-bytes 8388608 :max-header-line-bytes 8192 :max-ws-message-bytes 4194304
    :addresses {:http "/mail/http" :sse "/mail/sse" :ws "/mail/ws"}
-   :ping-every-ms 25000 :stop-wait-ms 10000 :ws-reopen-after-ms 1000
+   :ping-every-ms 25000 :sse-reconnect-after-ms 3000 :ws-reopen-after-ms 1000
+   :stop-wait-ms 10000 :stop-wait-after-cut-ms 1000
    :rate-limit-buckets-before-cleanup 10000})
 
 (def ^:private server-options
@@ -152,6 +157,7 @@
               (is (= [] (doorman/find-leaks (select-keys ready [:orders/all]) anna-request {:orders [order-99]} {:seed 7 :size 30})))
               (testing "and a handler that reads past the gates is caught"
                 (let [leaky {:orders/leaky {:action :orders/see :params-shape [:map] :answer-shape [:vector :uuid]
+                                            :rate-limit nil :run-steps-in nil
                                             :steps [{:name  :read-with-the-owner
                                                      :enter #(mailroom/add-answer-to-context
                                                               % (mapv :order/id (cellar/find-rows owner-pool find-all-orders {})))}]}}

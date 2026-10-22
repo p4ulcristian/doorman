@@ -45,11 +45,15 @@
   {:orders/remind {:action       :orders/see                ; no :record: an email, say
                    :params-shape [:map]
                    :answer-shape [:map]
+                   :rate-limit   nil
+                   :run-steps-in nil
                    :steps        [{:name :remind :enter #(mailroom/add-answer-to-context % {})}]}
    :orders/one {:action       :orders/see
                 :record       [:orders :order/id]
                 :params-shape [:map [:order/id :uuid]]
                 :answer-shape [:map [:order/id :uuid]]
+                :rate-limit   nil
+                :run-steps-in nil
                 :steps        [answer-the-order]}})
 
 (defn- run-sql! [pool text] (cellar/run-statement! pool (cellar/make-query-from-sql-text "test" text) {}))
@@ -77,9 +81,11 @@
 
 (def ^:private server-settings
   "mailroom's settings: three addresses, no proxy in front."
-  {:ip "127.0.0.1" :port 0 :client-address-header nil
+  {:ip "127.0.0.1" :port 0 :proxy-protocol :disable :client-address-header nil :server-header nil
+   :max-body-bytes 8388608 :max-header-line-bytes 8192 :max-ws-message-bytes 4194304
    :addresses {:http "/mail/http" :sse "/mail/sse" :ws "/mail/ws"}
-   :ping-every-ms 25000 :stop-wait-ms 10000 :ws-reopen-after-ms 1000
+   :ping-every-ms 25000 :sse-reconnect-after-ms 3000 :ws-reopen-after-ms 1000
+   :stop-wait-ms 10000 :stop-wait-after-cut-ms 1000
    :rate-limit-buckets-before-cleanup 10000})
 
 (def ^:private server-options
@@ -93,6 +99,18 @@
   (is (thrown-with-msg? clojure.lang.ExceptionInfo #"has no :action"
                         (doorman/put-access-into-handlers {:x/y {:steps []}} {:pool (Object.) :tables [shops orders] :scope-kinds scope-kinds
                                                                               :find-session-step no-session-step}))))
+
+(deftest a-handler-writes-out-mailroom-s-keys
+  (let [problems (try (doorman/put-access-into-handlers
+                       {:x/y (dissoc (:orders/remind handlers) :rate-limit :run-steps-in)
+                        :x/z (assoc (:orders/remind handlers) :run-steps-in (fn [run context] (run context)))}
+                       {:pool (Object.) :tables [shops orders] :scope-kinds scope-kinds :find-session-step no-session-step})
+                      (catch clojure.lang.ExceptionInfo e (:problems (ex-data e))))]
+    (is (= [":x/y has no :rate-limit (nil written out where nothing applies)"
+            ":x/y has no :run-steps-in (nil written out where nothing applies)"
+            ":x/z has its own :run-steps-in; doorman runs the steps in its transaction, so it must be nil"]
+           problems)
+        "every problem at once")))
 
 (deftest the-options-are-required
   (let [errors (try (doorman/put-access-into-handlers handlers {:tables [shops orders] :scope-kinds scope-kinds})

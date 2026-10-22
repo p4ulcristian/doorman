@@ -21,7 +21,7 @@
   (set (map str (filter #(or (uuid? %) (string? %)) (tree-seq coll? seq data)))))
 
 (defn- ask [handlers request handler-name params]
-  (get (mailroom/answer-message handlers request {handler-name params}) handler-name))
+  (get (mailroom/answer-message handlers :no-rate-limits request {handler-name params}) handler-name))
 
 (defn- check-record-handler [handlers request [handler-name {[table-key id-key] :record :as handler}] foreign-ids options]
   (for [id (get foreign-ids table-key)

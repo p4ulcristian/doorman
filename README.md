@@ -40,7 +40,10 @@ public namespace, `doorman.api`; its parts are `doorman.*`.
 | what | `find-leaks` | the leak test, for the app's own tests |
 
 Nothing has a default: every setting and option is written out; a missing
-one refuses, named, with every other problem at once.
+one refuses, named, with every other problem at once. A handler writes out
+every key mailroom reads (`:steps :params-shape :answer-shape :rate-limit
+:run-steps-in`); doorman wants both shapes real and `:run-steps-in` nil:
+[the decision](decisions/2026-10-22-a-handler-writes-out-mailrooms-keys.md).
 
 ```clojure
 (require '[doorman.api :as doorman]
@@ -78,6 +81,8 @@ one refuses, named, with every other problem at once.
                  :record       [:orders :order/id]
                  :params-shape [:map [:order/id :uuid]]
                  :answer-shape [:map [:order/id :uuid]]
+                 :rate-limit   nil                               ; mailroom's, nil for none
+                 :run-steps-in nil                               ; nil: doorman's transaction runs them
                  :steps        [find-order add-order-answer]}}   ; they use (:doorman/transaction context)
    {:pool app-pool :tables [shops orders] :scope-kinds scope-kinds
     :find-session-step (doorman/make-find-session-step app-pool settings)}))

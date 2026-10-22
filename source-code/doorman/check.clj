@@ -6,6 +6,8 @@
                    :record       [:orders :order/id]     ; the row the message names, by this param
                    :params-shape [:map [:order/id :uuid]]
                    :answer-shape …
+                   :rate-limit   nil
+                   :run-steps-in nil                       ; doorman's transaction
                    :steps        [find-order add-order-answer]}}
 
    Each message then runs: find the session; in one transaction (read-only
@@ -30,11 +32,21 @@
 
 (def ^:private set-asking (cellar/make-query-from-sql-file "doorman/set_asking.sql"))
 
-(defn- find-problems-of-handler [conditions [handler-name {:keys [action record params-shape answer-shape]}]]
+(defn- find-problems-of-handler
+  "Doorman's own keys, and mailroom's written out: :steps, :rate-limit
+   (nil for none) and :run-steps-in, nil, since doorman runs the steps in
+   its transaction and an app's own would be replaced unseen. Both shapes
+   must be real ones: the leak test makes params from :params-shape, and
+   an answer leaves only as :answer-shape allows."
+  [conditions [handler-name {:keys [action record params-shape answer-shape run-steps-in] :as handler}]]
   (concat
    (when-not action [(str handler-name " has no :action")])
    (when-not params-shape [(str handler-name " has no :params-shape")])
    (when-not answer-shape [(str handler-name " has no :answer-shape")])
+   (for [k [:steps :rate-limit :run-steps-in]
+         :when (not (contains? handler k))]
+     (str handler-name " has no " k " (nil written out where nothing applies)"))
+   (when run-steps-in [(str handler-name " has its own :run-steps-in; doorman runs the steps in its transaction, so it must be nil")])
    (when (and record (not (get-in conditions [(first record) :actions action])))
      [(str handler-name ": no sentence on " (first record) " allows " action)])))
 
