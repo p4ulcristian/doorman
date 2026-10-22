@@ -7,6 +7,7 @@
    [clojure.string :as str]
    [clojure.test :refer [deftest is testing]]
    [doorman.api :as doorman]
+   [doorman.test-settings :as test-settings]
    [cellar.api :as cellar]
    [mailroom.api :as mailroom])
   (:import
@@ -21,13 +22,20 @@
            :actions {:orders/see #{:read} :orders/edit #{:read :insert :update}}
            :roles   {"Staff" #{:orders/see :orders/edit}}}}))
 
-(def ^:private shops {:table :shops :columns [[:shop/id :uuid {:primary-key? true}]] :access :public})
+(def ^:private shops
+  {:table     :shops
+   :columns   [[:shop/id :uuid {:primary-key? true}]]
+   :indexes   []
+   :on-change nil
+   :access    :public})
 
 (def ^:private orders
-  {:table   :orders
-   :columns [[:order/id :uuid {:primary-key? true :default :random-uuid}]
-             [:order/shop-id :uuid {:references :shop/id}]]
-   :access  [{:allow #{:orders/see :orders/edit} :to [:member :order/shop-id]}]})
+  {:table     :orders
+   :columns   [[:order/id :uuid {:primary-key? true :default :random-uuid}]
+               [:order/shop-id :uuid {:references :shop/id}]]
+   :indexes   []
+   :on-change nil
+   :access    [{:allow #{:orders/see :orders/edit} :to [:member :order/shop-id]}]})
 
 (def ^:private paul #uuid "00000000-0000-4000-8000-00000000000a")
 (def ^:private anna #uuid "00000000-0000-4000-8000-00000000000b")
@@ -68,19 +76,18 @@
   (run-sql! owner-pool "DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'doorman_app') THEN CREATE ROLE doorman_app LOGIN; END IF; END $$")
   (let [tables (into (doorman/put-gates-on-tables [shops orders] scope-kinds) (conj doorman/access-tables doorman/sessions-table))]
     (doorman/install-access-functions! owner-pool)        ; before the gates: their policies call these
-    (with-out-str @(:slow-part (cellar/migrate! owner-pool tables [])))
+    (with-out-str @(:slow-part (cellar/migrate! owner-pool tables [] test-settings/migrate-options)))
     (cellar/grant-tables-to-role! owner-pool tables "doorman_app"))
   (run-sql! owner-pool (str "INSERT INTO shops VALUES ('" shop-7 "'), ('" shop-9 "')"))
   (run-sql! owner-pool (str "INSERT INTO orders VALUES ('" order-42 "', '" shop-7 "'), ('" order-99 "', '" shop-9 "')"))
-  (cellar/run-in-transaction! owner-pool
+  (cellar/run-in-transaction! owner-pool {:read-only? false}
     (fn [transaction]
       (doorman/add-scope! transaction scope-kinds :shop shop-7 paul)
       (doorman/add-scope! transaction scope-kinds :shop shop-9 bob)
       (doorman/add-membership! transaction [:shop shop-7] anna "Staff"))))
 
 (defn- start-pool! [user]
-  (cellar/start-pool! {:host "localhost" :port port :database "postgres" :user user :password nil
-                    :tls :off :pool-size 4 :statement-timeout-ms 5000 :time-zone "UTC"}))
+  (cellar/start-pool! (test-settings/make-pool-settings user 4)))
 
 (defn- ask [port cookie message-text]
   (.body (.send (HttpClient/newHttpClient)

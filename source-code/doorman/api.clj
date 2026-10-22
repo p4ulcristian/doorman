@@ -48,12 +48,14 @@
 
 (def sessions-table
   "The sessions, in doorman's own folder."
-  {:table   :doorman/sessions
-   :columns [[:session/fingerprint :string       {:primary-key? true}]
-             [:session/person-id   :uuid]
-             [:session/created-at  :time/instant {:default :now}]
-             [:session/ends-at     :time/instant]]
-   :indexes [[:session/person-id] [:session/ends-at]]})
+  {:table     :doorman/sessions
+   :columns   [[:session/fingerprint :string       {:primary-key? true}]
+               [:session/person-id   :uuid]
+               [:session/created-at  :time/instant {:default :now}]
+               [:session/ends-at     :time/instant]]
+   :indexes   [[:session/person-id] [:session/ends-at]]
+   :gates     nil
+   :on-change nil})
 
 (defn sign-in!
   "Makes a session for a person whose login the app has proven. Returns
@@ -99,26 +101,37 @@
 
 (def access-tables
   "The scopes, their roles and actions, and the memberships, in doorman's folder."
-  [{:table   :doorman/scopes
-    :columns [[:scope/kind      :string {:primary-key? true}]
-              [:scope/id        :uuid   {:primary-key? true}]
-              [:scope/parent-kind :string {:optional? true}]   ; for parent scopes, later
-              [:scope/parent-id   :uuid   {:optional? true}]]}
-   {:table   :doorman/roles
-    :columns [[:role/scope-kind :string {:primary-key? true}]
-              [:role/scope-id   :uuid   {:primary-key? true}]
-              [:role/name       :string {:primary-key? true}]]}
-   {:table   :doorman/role-actions
-    :columns [[:role-action/scope-kind :string {:primary-key? true}]
-              [:role-action/scope-id   :uuid   {:primary-key? true}]
-              [:role-action/role       :string {:primary-key? true}]
-              [:role-action/action     :string {:primary-key? true}]]}
-   {:table   :doorman/memberships
-    :columns [[:membership/person-id  :uuid   {:primary-key? true}]
-              [:membership/scope-kind :string {:primary-key? true}]
-              [:membership/scope-id   :uuid   {:primary-key? true}]
-              [:membership/role       :string]]
-    :indexes [[:membership/scope-kind :membership/scope-id]]}])
+  [{:table     :doorman/scopes
+    :columns   [[:scope/kind        :string {:primary-key? true}]
+                [:scope/id          :uuid   {:primary-key? true}]
+                [:scope/parent-kind :string {:optional? true}]   ; for parent scopes, later
+                [:scope/parent-id   :uuid   {:optional? true}]]
+    :indexes   []
+    :gates     nil
+    :on-change nil}
+   {:table     :doorman/roles
+    :columns   [[:role/scope-kind :string {:primary-key? true}]
+                [:role/scope-id   :uuid   {:primary-key? true}]
+                [:role/name       :string {:primary-key? true}]]
+    :indexes   []
+    :gates     nil
+    :on-change nil}
+   {:table     :doorman/role-actions
+    :columns   [[:role-action/scope-kind :string {:primary-key? true}]
+                [:role-action/scope-id   :uuid   {:primary-key? true}]
+                [:role-action/role       :string {:primary-key? true}]
+                [:role-action/action     :string {:primary-key? true}]]
+    :indexes   []
+    :gates     nil
+    :on-change nil}
+   {:table     :doorman/memberships
+    :columns   [[:membership/person-id  :uuid   {:primary-key? true}]
+                [:membership/scope-kind :string {:primary-key? true}]
+                [:membership/scope-id   :uuid   {:primary-key? true}]
+                [:membership/role       :string]]
+    :indexes   [[:membership/scope-kind :membership/scope-id]]
+    :gates     nil
+    :on-change nil}])
 
 (defn check-scope-kinds
   "Returns the app's scope kinds; throws with every problem at once (a role
@@ -204,17 +217,18 @@
 
 (defn put-gates-on-tables
   "The table maps, each with sentences given :gates (its :operations
-   conditions) for cellar to make Postgres's row rules from. A
+   conditions) for cellar to make Postgres's row rules from, and every
+   other one :gates nil (no row rules), so each map says its gates. A
    table that names a scope (references a scope kind's table) must have
    :access, or :access :public on purpose; otherwise this throws.
 
-     (cellar/migrate! pool (doorman/put-gates-on-tables tables scope-kinds) changes)"
+     (cellar/migrate! pool (doorman/put-gates-on-tables tables scope-kinds) changes migrate-options)"
   [tables scope-kinds]
   (let [conditions (conditions/make-sql-conditions tables scope-kinds)]
     (mapv (fn [{:keys [table] :as table-map}]
             (if-let [operations (get-in conditions [table :operations])]
               (assoc table-map :gates operations)
-              table-map))
+              (assoc table-map :gates nil)))
           tables)))
 
 (defn find-leaks

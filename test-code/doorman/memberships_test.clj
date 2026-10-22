@@ -4,6 +4,7 @@
   (:require
    [clojure.test :refer [deftest is testing]]
    [doorman.api :as doorman]
+   [doorman.test-settings :as test-settings]
    [cellar.api :as cellar]))
 
 (def ^:private port (some-> (System/getenv "DOORMAN_TEST_PORT") parse-long))
@@ -31,13 +32,11 @@
 (deftest who-belongs-where
   (if-not port
     (println "doorman.memberships-test: skipped, DOORMAN_TEST_PORT is not set")
-    (let [pool (cellar/start-pool! {:host "localhost" :port port :database "postgres"
-                                 :user (System/getenv "DOORMAN_TEST_USER") :password nil
-                                 :tls :off :pool-size 2 :statement-timeout-ms 5000 :time-zone "UTC"})]
+    (let [pool (cellar/start-pool! (test-settings/make-pool-settings (System/getenv "DOORMAN_TEST_USER") 2))]
       (try
         (cellar/run-statement! pool (cellar/make-query-from-sql-text "test" "DROP SCHEMA IF EXISTS doorman CASCADE; DROP SCHEMA IF EXISTS cellar CASCADE") {})
-        (with-out-str @(:slow-part (cellar/migrate! pool doorman/access-tables [])))
-        (cellar/run-in-transaction! pool
+        (with-out-str @(:slow-part (cellar/migrate! pool doorman/access-tables [] test-settings/migrate-options)))
+        (cellar/run-in-transaction! pool {:read-only? false}
           (fn [transaction]
             (doorman/add-scope! transaction scope-kinds :shop shop-7 paul)
             (doorman/add-membership! transaction [:shop shop-7] anna "Staff")

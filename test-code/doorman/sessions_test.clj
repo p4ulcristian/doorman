@@ -4,6 +4,7 @@
   (:require
    [clojure.test :refer [deftest is testing]]
    [doorman.api :as doorman]
+   [doorman.test-settings :as test-settings]
    [doorman.cookie :as cookie]
    [cellar.api :as cellar]
    [mailroom.api :as mailroom]))
@@ -47,13 +48,11 @@
 (deftest sessions-against-postgres
   (if-not port
     (println "doorman.sessions-test: skipped, DOORMAN_TEST_PORT is not set")
-    (let [pool (cellar/start-pool! {:host "localhost" :port port :database "postgres"
-                                 :user (System/getenv "DOORMAN_TEST_USER") :password nil
-                                 :tls :off :pool-size 2 :statement-timeout-ms 5000 :time-zone "UTC"})
+    (let [pool (cellar/start-pool! (test-settings/make-pool-settings (System/getenv "DOORMAN_TEST_USER") 2))
           step (doorman/make-find-session-step pool settings)]
       (try
         (cellar/run-statement! pool (cellar/make-query-from-sql-text "test" "DROP SCHEMA IF EXISTS doorman CASCADE; DROP SCHEMA IF EXISTS cellar CASCADE") {})
-        (with-out-str @(:slow-part (cellar/migrate! pool [doorman/sessions-table] [])))
+        (with-out-str @(:slow-part (cellar/migrate! pool [doorman/sessions-table] [] test-settings/migrate-options)))
         (let [{:keys [set-cookie]} (doorman/sign-in! pool anna settings)]
           (testing "a signed-in request: the person is in the context"
             (is (= anna (:doorman/person-id (run-find-session step (make-request set-cookie "https://app.test"))))))

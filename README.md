@@ -36,7 +36,7 @@ public namespace, `doorman.api`; its parts are `doorman.*`.
 | what | `make-sql-conditions` | the sentences, checked, as SQL: one condition per action and per operation |
 | what | `install-access-functions!` | `doorman.find_asking_person()` and `doorman.find_scopes_holding(kind, action)`, before migrate |
 | what | `put-access-into-handlers` | the check in front of every handler's steps, which run in a transaction that knows who is asking |
-| what | `put-gates-on-tables` | the table maps with their gates, for cellar |
+| what | `put-gates-on-tables` | the table maps with their gates, `:gates nil` on the ungated ones, for cellar |
 | what | `find-leaks` | the leak test, for the app's own tests |
 
 Nothing has a default: every setting and option is written out; a missing
@@ -62,16 +62,18 @@ every key mailroom reads (`:steps :params-shape :answer-shape :rate-limit
            :actions {:orders/see #{:read} :orders/edit #{:read :insert :update}}
            :roles   {"Staff" #{:orders/see :orders/edit} "Bookkeeper" #{:orders/see}}}}))
 
-(def orders
-  {:table   :orders
-   :columns [[:order/id :uuid {:primary-key? true}] [:order/shop-id :uuid {:references :shop/id}]]
-   :access  [{:allow #{:orders/see :orders/edit} :to [:member :order/shop-id]}]})
+(def orders                                         ; :gates comes from put-gates-on-tables
+  {:table     :orders
+   :columns   [[:order/id :uuid {:primary-key? true}] [:order/shop-id :uuid {:references :shop/id}]]
+   :indexes   []
+   :on-change nil
+   :access    [{:allow #{:orders/see :orders/edit} :to [:member :order/shop-id]}]})
 
 ;; the deploy, as the role that owns the tables
 (let [tables (into (doorman/put-gates-on-tables [shops orders] scope-kinds)
                    (conj doorman/access-tables doorman/sessions-table))]
   (doorman/install-access-functions! owner-pool)    ; before the gates: they call these
-  (cellar/migrate! owner-pool tables changes)
+  (cellar/migrate! owner-pool tables changes migrate-options)   ; cellar's time limits for each part
   (cellar/grant-tables-to-role! owner-pool tables "app"))   ; the folder doorman too
 
 ;; the app, as its own role, which owns nothing

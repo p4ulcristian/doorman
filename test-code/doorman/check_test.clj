@@ -5,6 +5,7 @@
    [clojure.string :as str]
    [clojure.test :refer [deftest is testing]]
    [doorman.api :as doorman]
+   [doorman.test-settings :as test-settings]
    [cellar.api :as cellar]
    [mailroom.api :as mailroom])
   (:import
@@ -17,13 +18,21 @@
   (doorman/check-scope-kinds
    {:shop {:table :shops :actions {:orders/see #{:read}} :roles {"Staff" #{:orders/see}}}}))
 
-(def ^:private shops {:table :shops :columns [[:shop/id :uuid {:primary-key? true}]]})
+(def ^:private shops
+  {:table     :shops
+   :columns   [[:shop/id :uuid {:primary-key? true}]]
+   :indexes   []
+   :gates     nil
+   :on-change nil})
 
 (def ^:private orders
-  {:table   :orders
-   :columns [[:order/id :uuid {:primary-key? true}]
-             [:order/shop-id :uuid {:references :shop/id}]]
-   :access  [{:allow :orders/see :to [:member :order/shop-id]}]})
+  {:table     :orders
+   :columns   [[:order/id :uuid {:primary-key? true}]
+               [:order/shop-id :uuid {:references :shop/id}]]
+   :indexes   []
+   :gates     nil
+   :on-change nil
+   :access    [{:allow :orders/see :to [:member :order/shop-id]}]})
 
 (def ^:private paul #uuid "00000000-0000-4000-8000-00000000000a")
 (def ^:private anna #uuid "00000000-0000-4000-8000-00000000000b")
@@ -69,11 +78,11 @@
 
 (defn- make-database! [pool]
   (run-sql! pool "DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public; DROP SCHEMA IF EXISTS doorman CASCADE; DROP SCHEMA IF EXISTS cellar CASCADE")
-  (with-out-str @(:slow-part (cellar/migrate! pool (into [shops orders doorman/sessions-table] doorman/access-tables) [])))
+  (with-out-str @(:slow-part (cellar/migrate! pool (into [shops orders doorman/sessions-table] doorman/access-tables) [] test-settings/migrate-options)))
   (doorman/install-access-functions! pool)
   (run-sql! pool (str "INSERT INTO shops VALUES ('" shop-7 "'), ('" shop-9 "')"))
   (run-sql! pool (str "INSERT INTO orders VALUES ('" order-42 "', '" shop-7 "'), ('" order-99 "', '" shop-9 "')"))
-  (cellar/run-in-transaction! pool
+  (cellar/run-in-transaction! pool {:read-only? false}
     (fn [transaction]
       (doorman/add-scope! transaction scope-kinds :shop shop-7 paul)
       (doorman/add-scope! transaction scope-kinds :shop shop-9 bob)
@@ -121,9 +130,7 @@
 (deftest the-check-end-to-end
   (if-not port
     (println "doorman.check-test: skipped, DOORMAN_TEST_PORT is not set")
-    (let [pool   (cellar/start-pool! {:host "localhost" :port port :database "postgres"
-                                   :user (System/getenv "DOORMAN_TEST_USER") :password nil
-                                   :tls :off :pool-size 4 :statement-timeout-ms 5000 :time-zone "UTC"})
+    (let [pool   (cellar/start-pool! (test-settings/make-pool-settings (System/getenv "DOORMAN_TEST_USER") 4))
           ready  (doorman/put-access-into-handlers handlers {:pool pool :tables [shops orders] :scope-kinds scope-kinds
                                                             :find-session-step (doorman/make-find-session-step pool settings)})
           server (mailroom/start-server! (get-in (first (mailroom/make-routes-for-messages ready server-settings server-options)) [1 :post :handler])
