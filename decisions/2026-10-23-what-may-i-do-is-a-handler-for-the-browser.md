@@ -1,3 +1,5 @@
+> **Changed in part** by [doorman owns the shape of "what may I do?"'s answer, on both sides](2026-10-23-doorman-owns-the-my-actions-answer-shape-on-both-sides.md) (2026-10-23, v0.6.0): the shape is written once, in `doorman.shapes` (`.cljc`), and the browser takes it from `doorman.api`'s `.cljs` half; parlor's copy is gone.
+
 # "What may I do?" is a handler for the browser; open actions are listed for every scope
 
 > Adds to [access, piece 1: who belongs where](2026-10-22-access-piece-1-who-belongs-where.md) and [access, piece 3: the check](2026-10-22-access-piece-3-the-check.md). Answers what parlor's ["Can I?" reads an answer the app names](https://github.com/p4ulcristian/parlor/blob/main/decisions/2026-10-22-can-i-reads-an-answer-the-app-names.md) left open. Since v0.4.0.

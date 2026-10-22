@@ -21,16 +21,13 @@
   (:require
    [cellar.api :as cellar]
    [doorman.memberships :as memberships]
+   [doorman.shapes :as shapes]
    [doorman.sentences :as sentences]
    [mailroom.api :as mailroom]))
 
 (def answer-shape
-  "The answer, by wire: scope kinds and actions travel as their text and
-   come back keywords."
-  [:vector [:map {:closed true}
-            [:scope-kind [:maybe :keyword]]
-            [:scope-id [:maybe :uuid]]
-            [:actions [:vector :keyword]]]])
+  "The answer, doorman.shapes's, the same on both sides."
+  shapes/my-actions-answer-shape)
 
 (defn- sort-actions [actions]
   (vec (sort-by #(subs (str %) 1) actions)))

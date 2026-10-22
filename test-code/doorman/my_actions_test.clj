@@ -7,6 +7,7 @@
    [clojure.test :refer [deftest is testing]]
    [cellar.api :as cellar]
    [doorman.api :as doorman]
+   [doorman.shapes]
    [doorman.test-log :refer [log]]
    [doorman.test-settings :as test-settings]
    [doorman.test-wire :refer [wire]]
@@ -138,3 +139,7 @@
                                                           :rate-limit nil})}]
             (is (= [] (ask-as closed nil "http://app.test")))))
         (finally (cellar/stop-pool! pool))))))
+
+(deftest the-answer-shape-is-one-on-both-sides
+  (is (identical? doorman.shapes/my-actions-answer-shape doorman/my-actions-answer-shape)
+      "the server's is doorman.shapes's, the .cljc the browser's half reads"))

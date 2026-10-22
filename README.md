@@ -40,7 +40,7 @@ step's lines say who asked
 | what | `check-scope-kinds` | the app's kinds of scope, checked |
 | what | `does-action-only-read?` | whether an action only reads (its handlers run read-only); every other one's may write |
 | what | `add-scope!` `add-role!` `add-membership!` `remove-membership!` `list-actions-of-person` | who belongs where; a scope's founder is its Owner, holding every action |
-| what | `make-my-actions-handler` `my-actions-answer-shape` | "what may I do?" for the browser: the asker's actions by scope, and the open ones (`:anyone`; `:signed-in` and `[:me …]` when signed in) under nil kind and id, every scope; read-only, as the asker |
+| what | `make-my-actions-handler` `my-actions-answer-shape` (the shape on both sides: `doorman.api`'s `.cljs` half has it too) | "what may I do?" for the browser: the asker's actions by scope, and the open ones (`:anyone`; `:signed-in` and `[:me …]` when signed in) under nil kind and id, every scope; read-only, as the asker |
 | what | `make-sql-conditions` | the sentences, checked, as SQL: one condition per action and per operation |
 | what | `install-access-functions!` | `doorman.find_asking_person()` and `doorman.find_scopes_holding(kind, action)`, before migrate |
 | what | `put-access-into-handlers` | the check in front of every handler's steps, which run in a transaction that knows who is asking |

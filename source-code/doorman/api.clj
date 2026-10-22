@@ -253,7 +253,8 @@
      [{:scope-kind nil   :scope-id nil      :actions [:profile/edit]}
       {:scope-kind :shop :scope-id #uuid \"…\" :actions [:orders/edit :orders/see]}]
 
-   parlor's actions-answer-shape, the browser's side of the same."
+   The same value in the browser: doorman.api's .cljs half, for the
+   app's shapes by name (doorman.shapes, one .cljc for both sides)."
   my-actions/answer-shape)
 
 (defn make-my-actions-handler
