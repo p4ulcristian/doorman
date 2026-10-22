@@ -100,7 +100,7 @@
 (deftest what-may-i-do
   (if-not port
     (println "doorman.my-actions-test: skipped, DOORMAN_TEST_PORT is not set")
-    (let [pool     (cellar/start-pool! (test-settings/make-pool-settings (System/getenv "DOORMAN_TEST_USER") 2))
+    (let [pool     (test-settings/start-pool! (System/getenv "DOORMAN_TEST_USER") 2)
           handlers {:doorman/my-actions
                     (doorman/make-my-actions-handler {:pool pool :tables tables :scope-kinds scope-kinds
                                                       :find-session-step (doorman/make-find-session-step pool settings)

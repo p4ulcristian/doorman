@@ -153,7 +153,7 @@
 
 (defn- run-sql! [pool text] (cellar/run-statement! pool (cellar/make-query-from-sql-text "test" text) {}))
 
-(defn- start-pool! [user] (cellar/start-pool! (test-settings/make-pool-settings user 4)))
+(defn- start-pool! [user] (test-settings/start-pool! user 4))
 
 (defn- make-database! [owner-pool]
   (run-sql! owner-pool "DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public; DROP SCHEMA IF EXISTS doorman CASCADE; DROP SCHEMA IF EXISTS cellar CASCADE")

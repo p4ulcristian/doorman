@@ -1,6 +1,11 @@
 (ns doorman.test-settings
   "The pool settings and migrate! options the tests run with, each written
-   out, as cellar requires them.")
+   out, as cellar requires them, and a pool started as an app starts its
+   own: with a log and a meter of its own."
+  (:require
+   [cellar.api :as cellar]
+   [logbook.api :as logbook]
+   [meter.api :as meter]))
 
 (def port (some-> (System/getenv "DOORMAN_TEST_PORT") parse-long))
 
@@ -26,9 +31,29 @@
    :statement-timeout-ms           5000
    :lock-timeout-ms                :none
    :idle-in-transaction-timeout-ms :none
-   :time-zone                      "UTC"})
+   :time-zone                      "UTC"
+   :metric-buckets                 {:query-seconds              [0.01 0.1 1]
+                                    :connection-acquire-seconds [0.01 0.1 1]
+                                    :connection-usage-seconds   [0.01 0.1 1]}})
 
 (def migrate-options
   {:instant-part {:statement-timeout-ms 10000 :lock-timeout-ms 5000}
    :slow-part    {:statement-timeout-ms :none :lock-timeout-ms 5000}
    :log          (fn [_level _event _data])})
+
+(def log
+  "The tests' log, as an app makes its own; its lines go nowhere."
+  (logbook/log-function (logbook/make-logbook {:lowest-level :error :format :json :errors-kept 10
+                                               :write-to     (fn [_line])})))
+
+(defn make-meter
+  "A meter, as an app makes its own."
+  []
+  (meter/make-meter {:jvm-metrics false :most-series-per-metric 10000} {:log log}))
+
+(defn start-pool!
+  "A pool on the test Postgres, as user, with the tests' log and a meter of
+   its own (cellar takes one meter per pool)."
+  [user pool-size]
+  (cellar/start-pool! (make-pool-settings user pool-size)
+                      {:log log :meter (make-meter)}))

@@ -35,7 +35,7 @@
 (deftest who-belongs-where
   (if-not port
     (println "doorman.memberships-test: skipped, DOORMAN_TEST_PORT is not set")
-    (let [pool (cellar/start-pool! (test-settings/make-pool-settings (System/getenv "DOORMAN_TEST_USER") 2))]
+    (let [pool (test-settings/start-pool! (System/getenv "DOORMAN_TEST_USER") 2)]
       (try
         (cellar/run-statement! pool (cellar/make-query-from-sql-text "test" "DROP SCHEMA IF EXISTS doorman CASCADE; DROP SCHEMA IF EXISTS cellar CASCADE") {})
         (with-out-str @(:slow-part (cellar/migrate! pool doorman/access-tables [] test-settings/migrate-options)))

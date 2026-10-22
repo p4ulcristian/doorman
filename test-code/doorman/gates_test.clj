@@ -90,7 +90,7 @@
       (doorman/add-membership! transaction [:shop shop-7] anna "Staff"))))
 
 (defn- start-pool! [user]
-  (cellar/start-pool! (test-settings/make-pool-settings user 4)))
+  (test-settings/start-pool! user 4))
 
 (defn- ask [port cookie message-text]
   (.body (.send (HttpClient/newHttpClient)
@@ -107,10 +107,12 @@
    :addresses {:http "/mail/http" :sse "/mail/sse" :ws "/mail/ws"}
    :ping-every-ms 25000 :sse-reconnect-after-ms 3000 :ws-reopen-after-ms 1000
    :stop-wait-ms 10000 :stop-wait-after-cut-ms 1000
-   :rate-limit-buckets-before-cleanup 10000})
+   :rate-limit-buckets-before-cleanup 10000
+   :metric-buckets {:answer-seconds [0.01 0.1 1]}})
 
 (def ^:private server-options
-  "mailroom's options: askers by address, no hooks."
+  "mailroom's options: askers by address, no hooks; a new meter is added
+   where the routes are made."
   {:wire                wire
    :log                 log
    :find-rate-limit-key #(mailroom/find-client-address % nil)
@@ -128,7 +130,7 @@
       (let [app-pool (start-pool! "doorman_app")
             ready    (doorman/put-access-into-handlers handlers {:pool app-pool :tables [shops orders] :scope-kinds scope-kinds
                                                                 :find-session-step (doorman/make-find-session-step app-pool settings)})
-            server   (mailroom/start-server! (get-in (first (mailroom/make-routes-for-messages ready server-settings server-options)) [1 :post :handler])
+            server   (mailroom/start-server! (get-in (first (mailroom/make-routes-for-messages ready server-settings (assoc server-options :meter (test-settings/make-meter)))) [1 :post :handler])
                                               server-settings {:log log})
             cookie   #(first (str/split (:set-cookie (doorman/sign-in! app-pool {:headers {}} % {:settings settings :tables [] :session-flags #{}})) #";"))]
         (try
