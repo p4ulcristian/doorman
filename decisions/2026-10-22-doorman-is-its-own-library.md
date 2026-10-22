@@ -1,5 +1,7 @@
 # doorman is its own library
 
+> **Changed in part** by [The app passes its wire; doorman never makes one](2026-10-22-the-app-passes-its-wire.md) (2026-10-22, v0.2.0): the settings are checked by malli itself, and doorman needs wire no more; `find-leaks` takes the app's wire.
+
 > Changes in part [sessions v1](2026-10-22-sessions-v1.md), [access, piece 1](2026-10-22-access-piece-1-who-belongs-where.md), [piece 2](2026-10-22-access-piece-2-sentences-into-sql.md), [piece 3](2026-10-22-access-piece-3-the-check.md), [piece 4](2026-10-22-access-piece-4-the-gates.md), [piece 5](2026-10-22-access-piece-5-the-leak-test.md) and [Sessions live in Postgres](2026-10-12-sessions-live-in-postgres.md): their names, their keys, and every default they had.
 
 **Decision:** doorman is a library of its own, in its own public repository, under the MIT license; an app or a framework takes it from git by tag. It was two of Groundwork's libraries, sessions (`groundwork.server.sessions`) and access (`groundwork.server.access`); now it is one library, the namespace `doorman`, answering two questions at the door: **who is asking** (a session in Postgres, a cookie of random bytes) and **what may they do** (scopes, roles and memberships, the `:access` sentences turned into SQL conditions, the check in front of every handler, the gates, the leak test).

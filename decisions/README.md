@@ -28,9 +28,10 @@ All but the last two were made while doorman was two libraries inside Groundwork
 - [access, piece 2: sentences into SQL conditions](2026-10-22-access-piece-2-sentences-into-sql.md), changed in part by [doorman is its own library](2026-10-22-doorman-is-its-own-library.md)
 - [access, piece 3: the check, put in front of every handler](2026-10-22-access-piece-3-the-check.md), changed in part by [doorman is its own library](2026-10-22-doorman-is-its-own-library.md) and [A handler writes out mailroom's keys](2026-10-22-a-handler-writes-out-mailrooms-keys.md)
 - [access, piece 4: the gates](2026-10-22-access-piece-4-the-gates.md), changed in part by [doorman is its own library](2026-10-22-doorman-is-its-own-library.md)
-- [access, piece 5: the leak test](2026-10-22-access-piece-5-the-leak-test.md), changed in part by [doorman is its own library](2026-10-22-doorman-is-its-own-library.md)
+- [access, piece 5: the leak test](2026-10-22-access-piece-5-the-leak-test.md), changed in part by [doorman is its own library](2026-10-22-doorman-is-its-own-library.md) and [The app passes its wire](2026-10-22-the-app-passes-its-wire.md)
 
 ## The library
 
-- [doorman is its own library](2026-10-22-doorman-is-its-own-library.md)
+- [doorman is its own library](2026-10-22-doorman-is-its-own-library.md), changed in part by [The app passes its wire](2026-10-22-the-app-passes-its-wire.md)
 - [A handler writes out mailroom's keys, and its :run-steps-in is nil](2026-10-22-a-handler-writes-out-mailrooms-keys.md)
+- [The app passes its wire; doorman never makes one](2026-10-22-the-app-passes-its-wire.md)

@@ -7,6 +7,7 @@
    [doorman.api :as doorman]
    [doorman.test-settings :as test-settings]
    [cellar.api :as cellar]
+   [doorman.test-wire :refer [wire]]
    [mailroom.api :as mailroom])
   (:import
    (java.net URI)
@@ -99,7 +100,8 @@
 
 (def ^:private server-options
   "mailroom's options: askers by address, no hooks."
-  {:find-rate-limit-key #(mailroom/find-client-address % nil)
+  {:wire                wire
+   :find-rate-limit-key #(mailroom/find-client-address % nil)
    :on-sse-open nil :on-sse-close nil :on-ws-open nil :on-ws-close nil})
 
 (def ^:private no-session-step {:name :no-session :enter identity})
@@ -126,6 +128,12 @@
                     (catch clojure.lang.ExceptionInfo e (ex-data e)))]
     (is (= :doorman/bad-options (:type errors)))
     (is (= #{:pool :find-session-step} (set (keys (:errors errors)))) "each missing one is named")))
+
+(deftest the-leak-test-takes-the-apps-wire
+  (let [errors (try (doorman/find-leaks {} {} {} {:seed 7 :size 30})
+                    (catch clojure.lang.ExceptionInfo e (ex-data e)))]
+    (is (= :doorman/bad-options (:type errors)))
+    (is (= #{:wire} (set (keys (:errors errors)))) "doorman makes no wire: the app hands its own in")))
 
 (deftest the-check-end-to-end
   (if-not port

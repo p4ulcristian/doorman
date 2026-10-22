@@ -6,7 +6,9 @@
    \"Not found.\". A handler without one (a list) is asked once: its answer
    must hold none of the foreign ids. The other params come from the
    handler's :params-shape, by malli's generator, with the options' :seed
-   (the same params every run) and :size (how big the made-up values get)."
+   (the same params every run) and :size (how big the made-up values get).
+   Each message is answered by mailroom's answer-message, by the options'
+   :wire."
   (:require
    [mailroom.api :as mailroom]
    [malli.generator :as generator]))
@@ -20,17 +22,17 @@
   [data]
   (set (map str (filter #(or (uuid? %) (string? %)) (tree-seq coll? seq data)))))
 
-(defn- ask [handlers request handler-name params]
-  (get (mailroom/answer-message handlers :no-rate-limits request {handler-name params}) handler-name))
+(defn- ask [handlers request handler-name params {:keys [wire]}]
+  (get (mailroom/answer-message handlers :no-rate-limits request {handler-name params} {:wire wire}) handler-name))
 
 (defn- check-record-handler [handlers request [handler-name {[table-key id-key] :record :as handler}] foreign-ids options]
   (for [id (get foreign-ids table-key)
-        :let [answer (ask handlers request handler-name (assoc (generate-params handler options) id-key id))]
+        :let [answer (ask handlers request handler-name (assoc (generate-params handler options) id-key id) options)]
         :when (not= {:error "Not found."} answer)]
     {:handler handler-name :asked-for id :answer answer}))
 
 (defn- check-list-handler [handlers request [handler-name handler] foreign-ids options]
-  (let [answer (ask handlers request handler-name (generate-params handler options))
+  (let [answer (ask handlers request handler-name (generate-params handler options) options)
         found  (filter (find-texts-in answer) (map str (mapcat val foreign-ids)))]
     (when (seq found)
       [{:handler handler-name :gave-back (vec found)}])))

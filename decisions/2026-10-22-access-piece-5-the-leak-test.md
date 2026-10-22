@@ -1,5 +1,7 @@
 # access, piece 5: the leak test
 
+> **Changed in part** by [The app passes its wire; doorman never makes one](2026-10-22-the-app-passes-its-wire.md) (2026-10-22, v0.2.0): `find-leaks` takes the app's wire, `:wire`, in its options, for mailroom's `answer-message`.
+
 > **Changed in part** by [doorman is its own library](2026-10-22-doorman-is-its-own-library.md) (2026-10-22): `find-leaks` takes options, `{:seed … :size …}`, both required (seed 7 and malli's size 30 before, unwritten).
 
 > Builds on [doorman ships permissions](2026-10-12-doorman-ships-permissions.md) (the built-in leak test).

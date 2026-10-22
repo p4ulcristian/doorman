@@ -238,8 +238,10 @@
    {:orders [id …]}. A handler with a :record must answer \"Not found.\" for
    each; any other must give none of them back. Its other params come from
    its :params-shape, by malli's generator, with the options' :seed and
-   :size, both required. Returns every leak; empty means none.
+   :size. Each message is answered as over http, by the options' :wire, the
+   app's wire (doorman never makes one). Every option is required. Returns
+   every leak; empty means none.
 
-     (is (= [] (doorman/find-leaks ready-handlers anna-request {:orders [order-in-shop-9]} {:seed 7 :size 30})))"
+     (is (= [] (doorman/find-leaks ready-handlers anna-request {:orders [order-in-shop-9]} {:wire wire :seed 7 :size 30})))"
   [handlers request foreign-ids options]
   (leaks/find-leaks handlers request foreign-ids (settings/check-leak-options options)))

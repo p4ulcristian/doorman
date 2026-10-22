@@ -9,6 +9,7 @@
    [doorman.api :as doorman]
    [doorman.test-settings :as test-settings]
    [cellar.api :as cellar]
+   [doorman.test-wire :refer [wire]]
    [mailroom.api :as mailroom])
   (:import
    (java.net URI)
@@ -108,7 +109,8 @@
 
 (def ^:private server-options
   "mailroom's options: askers by address, no hooks."
-  {:find-rate-limit-key #(mailroom/find-client-address % nil)
+  {:wire                wire
+   :find-rate-limit-key #(mailroom/find-client-address % nil)
    :on-sse-open nil :on-sse-close nil :on-ws-open nil :on-ws-close nil})
 
 (deftest a-table-that-names-a-scope-needs-access
@@ -161,7 +163,7 @@
           (testing "the leak test: Anna, asked for shop 9's order, gets nothing of it"
             (let [anna-request {:request-method :post
                                 :headers {"origin" "http://app.test" "cookie" (cookie anna)}}]
-              (is (= [] (doorman/find-leaks (select-keys ready [:orders/all]) anna-request {:orders [order-99]} {:seed 7 :size 30})))
+              (is (= [] (doorman/find-leaks (select-keys ready [:orders/all]) anna-request {:orders [order-99]} {:wire wire :seed 7 :size 30})))
               (testing "and a handler that reads past the gates is caught"
                 (let [leaky {:orders/leaky {:action :orders/see :params-shape [:map] :answer-shape [:vector :uuid]
                                             :rate-limit nil :run-steps-in nil
@@ -171,7 +173,7 @@
                       ready-leaky (doorman/put-access-into-handlers leaky {:pool app-pool :tables [shops orders] :scope-kinds scope-kinds
                                                                           :find-session-step (doorman/make-find-session-step app-pool settings)})]
                   (is (= [{:handler :orders/leaky :gave-back [(str order-99)]}]
-                         (doorman/find-leaks ready-leaky anna-request {:orders [order-99]} {:seed 7 :size 30})))))))
+                         (doorman/find-leaks ready-leaky anna-request {:orders [order-99]} {:wire wire :seed 7 :size 30})))))))
           (finally
             (mailroom/stop-server! server)
             (cellar/stop-pool! app-pool)

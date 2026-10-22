@@ -2,9 +2,11 @@
   "doorman's settings, and the options put-access-into-handlers takes,
    checked before anything runs. Nothing has a default: every setting is
    written out, and a missing one refuses, named, with every other problem
-   at once."
+   at once. They are checked by malli itself: they are values the app hands
+   in, not data crossing an edge."
   (:require
-   [wire.api :as wire]))
+   [malli.core :as malli]
+   [malli.error :as malli-error]))
 
 (def settings-shape
   "The settings, every key required.
@@ -39,16 +41,21 @@
 (def leak-options-shape
   "find-leaks's options, every key required: malli's generator makes each
    handler's other params from its :params-shape.
+   :wire: the app's wire (wire.api's make-wire-from-settings), which each
+   message is answered by, as over http (mailroom's answer-message);
+   doorman never makes one.
    :seed: the same seed makes the same params every run.
    :size: how big the made-up values get (malli's 30 when it chose)."
   [:map {:closed true}
+   [:wire [some? {:error/message "should be the app's wire, made by wire.api/make-wire-from-settings"}]]
    [:seed :int]
    [:size [:int {:min 0}]]])
 
 (defn- check-data-for-shape [what kind shape data]
-  (when-let [errors (wire/find-errors-in-data-for-shape shape data)]
-    (throw (ex-info (str what " have problems: " (pr-str errors))
-                    {:type kind :errors errors})))
+  (when-let [explanation (malli/explain shape data)]
+    (let [errors (malli-error/humanize explanation)]
+      (throw (ex-info (str what " have problems: " (pr-str errors))
+                      {:type kind :errors errors}))))
   data)
 
 (defn check-settings

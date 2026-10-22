@@ -16,9 +16,11 @@ io.github.p4ulcristian/doorman {:git/tag "v0.1.3" :git/sha "11c056a"}
 
 Needs [cellar](https://github.com/p4ulcristian/cellar) (Postgres, tables as
 maps, their gates), [mailroom](https://github.com/p4ulcristian/mailroom) (a
-handler's steps), [wire](https://github.com/p4ulcristian/wire) (the settings
-checked), malli with test.check (the leak test's params) and jsonista. One
-public namespace, `doorman.api`; its parts are `doorman.*`.
+handler's steps), malli with test.check (the settings checked, the leak
+test's params) and jsonista. One public namespace, `doorman.api`; its parts
+are `doorman.*`. The leak test takes the app's
+[wire](https://github.com/p4ulcristian/wire) under `:wire`; doorman never
+makes one.
 
 ## The api
 
@@ -37,7 +39,7 @@ public namespace, `doorman.api`; its parts are `doorman.*`.
 | what | `install-access-functions!` | `doorman.find_asking_person()` and `doorman.find_scopes_holding(kind, action)`, before migrate |
 | what | `put-access-into-handlers` | the check in front of every handler's steps, which run in a transaction that knows who is asking |
 | what | `put-gates-on-tables` | the table maps with their gates, `:gates nil` on the ungated ones, for cellar |
-| what | `find-leaks` | the leak test, for the app's own tests |
+| what | `find-leaks` | the leak test, for the app's own tests, by the app's wire (`:wire`) |
 
 Nothing has a default: every setting and option is written out; a missing
 one refuses, named, with every other problem at once. A handler writes out
@@ -93,8 +95,8 @@ every key mailroom reads (`:steps :params-shape :answer-shape :rate-limit
 (let [{:keys [set-cookie]} (doorman/sign-in! app-pool person-id settings)]
   {:status 302 :headers {"location" "/" "set-cookie" set-cookie}})
 
-;; in the app's tests
-(is (= [] (doorman/find-leaks ready anna-request {:orders [order-in-another-shop]} {:seed 7 :size 30})))
+;; in the app's tests, with the app's wire (wire.api's make-wire-from-settings)
+(is (= [] (doorman/find-leaks ready anna-request {:orders [order-in-another-shop]} {:wire wire :seed 7 :size 30})))
 ```
 
 ## Tests
