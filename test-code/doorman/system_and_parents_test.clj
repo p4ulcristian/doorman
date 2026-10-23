@@ -33,13 +33,16 @@
 
 (def ^:private shops
   {:table :shops :columns [[:shop/id :uuid {:primary-key? true}] [:shop/status :string]]
-   :indexes [] :references [] :triggers [] :on-change nil :access :public})
+   :indexes [] :uniques [] :checks [] :references [] :triggers [] :on-change nil :access :public})
 
 (def ^:private orders
   {:table      :orders
    :columns    [[:order/id :uuid {:primary-key? true}]
-                [:order/shop-id :uuid {:references :shop/id}]]
-   :indexes    [[:order/shop-id]]
+                [:order/shop-id :uuid {:references {:to :shop/id :on-delete :refuse :on-update :refuse :checked-at :statement}}]]
+   :indexes    [{:columns [[:order/shop-id :ascending :nulls-last]]
+                 :method :btree :ops {} :unique? false :where nil}]
+   :uniques    []
+   :checks     []
    :references []
    :triggers   []
    :on-change  nil
@@ -48,9 +51,14 @@
 (def ^:private jobs
   {:table      :jobs
    :columns    [[:job/id :uuid {:primary-key? true :default :random-uuid}]
-                [:job/order-id :uuid {:references :order/id}]
-                [:job/shop-id :uuid {:references :shop/id}]]
-   :indexes    [[:job/order-id] [:job/shop-id]]
+                [:job/order-id :uuid {:references {:to :order/id :on-delete :refuse :on-update :refuse :checked-at :statement}}]
+                [:job/shop-id :uuid {:references {:to :shop/id :on-delete :refuse :on-update :refuse :checked-at :statement}}]]
+   :indexes    [{:columns [[:job/order-id :ascending :nulls-last]]
+                 :method :btree :ops {} :unique? false :where nil}
+                {:columns [[:job/shop-id :ascending :nulls-last]]
+                 :method :btree :ops {} :unique? false :where nil}]
+   :uniques    []
+   :checks     []
    :references []
    :triggers   []
    :on-change  nil
@@ -60,9 +68,12 @@
 (def ^:private photos
   {:table      :photos
    :columns    [[:photo/id :uuid {:primary-key? true :default :random-uuid}]
-                [:photo/job-id :uuid {:references :job/id}]
-                [:photo/shop-id :uuid {:references :shop/id}]]
-   :indexes    [[:photo/job-id]]
+                [:photo/job-id :uuid {:references {:to :job/id :on-delete :refuse :on-update :refuse :checked-at :statement}}]
+                [:photo/shop-id :uuid {:references {:to :shop/id :on-delete :refuse :on-update :refuse :checked-at :statement}}]]
+   :indexes    [{:columns [[:photo/job-id :ascending :nulls-last]]
+                 :method :btree :ops {} :unique? false :where nil}]
+   :uniques    []
+   :checks     []
    :references []
    :triggers   []
    :on-change  nil
@@ -72,10 +83,13 @@
 (def ^:private shop-emails
   {:table      :shop-emails
    :columns    [[:shop-email/id :uuid {:primary-key? true}]
-                [:shop-email/shop-id :uuid {:references :shop/id}]
+                [:shop-email/shop-id :uuid {:references {:to :shop/id :on-delete :refuse :on-update :refuse :checked-at :statement}}]
                 [:shop-email/address :string]
                 [:shop-email/bounced :boolean {:default false}]]
-   :indexes    [[:shop-email/shop-id]]
+   :indexes    [{:columns [[:shop-email/shop-id :ascending :nulls-last]]
+                 :method :btree :ops {} :unique? false :where nil}]
+   :uniques    []
+   :checks     []
    :references []
    :triggers   []
    :on-change  nil
@@ -117,9 +131,9 @@
         ready      (into (doorman/put-gates-on-tables tables scope-kinds) (conj doorman/access-tables doorman/sessions-table doorman/tokens-table))]
     (try
       (doorman/install-access-functions! owner-pool tables scope-kinds)
-      (with-out-str @(:slow-part (cellar/migrate! owner-pool ready [] test-settings/migrate-options)))
+      (with-out-str @(:slow-part (cellar/migrate! owner-pool (test-settings/declare-tables ready) [] test-settings/migrate-options)))
       (cellar/grant-tables-to-role! owner-pool ready "doorman_app")
-      (is (cellar/does-database-match-tables? owner-pool ready []) "the link and the fill are in the maps: nothing left to do")
+      (is (cellar/does-database-match-tables? owner-pool (test-settings/declare-tables ready) []) "the link and the fill are in the maps: nothing left to do")
       (finally (cellar/stop-pool! owner-pool))))
   (run-sql! super-pool (str "INSERT INTO shops VALUES ('" shop-7 "', 'open'), ('" shop-8 "', 'suspended'), ('" shop-9 "', 'open')"))
   (cellar/run-in-transaction! super-pool {:read-only? false}
@@ -172,21 +186,24 @@
     (is (some #(re-find #"must reference another table's one-column primary key" %)
               (problems [shops orders (assoc-in jobs [:parent :column] :job/id)])))
     (is (some #(re-find #":job/shop-id is optional" %)
-              (problems [shops orders (assoc-in jobs [:columns 2] [:job/shop-id :uuid {:references :shop/id :optional? true}])])))
+              (problems [shops orders (assoc-in jobs [:columns 2] [:job/shop-id :uuid {:references {:to :shop/id :on-delete :refuse :on-update :refuse :checked-at :statement} :optional? true}])])))
     (is (some #(re-find #"needs an index on \[:job/order-id\]" %)
-              (problems [shops orders (assoc jobs :indexes [[:job/shop-id]])])))
+              (problems [shops orders (assoc jobs :indexes [{:columns [[:job/shop-id :ascending :nulls-last]] :method :btree :ops {} :unique? false :where nil}])])))
     (is (some #(re-find #"carries :job/shop-id from :order/nothing" %)
               (problems [shops orders (assoc-in jobs [:parent :carries] {:job/shop-id :order/nothing})])))
     (is (some #(re-find #":parent is \{:column" %)
               (problems [shops orders (assoc jobs :parent {:column :job/order-id})]))))
   (testing "doorman puts the link and the fill on the child, beside its own"
     (let [ready (into {} (map (juxt :table identity)) (doorman/put-gates-on-tables tables scope-kinds))]
-      (is (= [{:columns [:job/order-id :job/shop-id] :to [:order/id :order/shop-id] :on-update :cascade}]
+      (is (= [{:columns [:job/order-id :job/shop-id] :to [:order/id :order/shop-id]
+               :on-delete :refuse :on-update :cascade :checked-at :statement}]
              (get-in ready [:jobs :references])))
-      (is (= [{:columns [:photo/job-id :photo/shop-id] :to [:job/id :job/shop-id] :on-update :cascade}]
+      (is (= [{:columns [:photo/job-id :photo/shop-id] :to [:job/id :job/shop-id]
+               :on-delete :refuse :on-update :cascade :checked-at :statement}]
              (get-in ready [:photos :references])))
-      (is (= [:before #{:insert :update} [:job/order-id] :row]
-             ((juxt :timing :events :update-of :for-each) (first (get-in ready [:jobs :triggers])))))
+      (is (= [:before #{:insert :update} [:job/order-id] :row nil]
+             ((juxt :timing :events :update-of :for-each :when) (first (get-in ready [:jobs :triggers]))))
+          "called for every row: the fill itself skips a row with no parent")
       (is (= [] (get-in ready [:orders :references]) (get-in ready [:orders :triggers]))))))
 
 (deftest a-system-actor-is-refused-a-transaction-and-a-bad-name

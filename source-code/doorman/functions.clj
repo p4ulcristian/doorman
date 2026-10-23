@@ -45,7 +45,7 @@
   (let [other  (get tables-by-key table)
         pairs  (sentences/find-matched-pairs via)
         outs   (map-indexed (fn [i [_ theirs]]
-                              (str "via_" (inc i) " " (sentences/turn-type-into-postgres-type (sentences/find-column-type other theirs))))
+                              (str "via_" (inc i) " " (cellar/turn-column-type-into-postgres-type (sentences/find-column-type other theirs))))
                             pairs)
         who    (sentences/turn-who-into-sql to nil other place)]
     (str "CREATE OR REPLACE FUNCTION " (sentences/find-via-function-name via tables-by-key) "()\n"
@@ -75,7 +75,7 @@
   [table {:keys [columns whens] :as guard}]
   (let [table-key (:table table)
         id        (first (sentences/find-primary-key-columns table))
-        type-of   #(sentences/turn-type-into-postgres-type (sentences/find-column-type table %))
+        type-of   #(cellar/turn-column-type-into-postgres-type (sentences/find-column-type table %))
         params    (concat [(str "row_id " (type-of id))]
                           (map-indexed (fn [i c] (str "column_" (inc i) " " (type-of c))) columns)
                           (map-indexed (fn [i _] (str "when_" (inc i) " boolean")) whens))
@@ -96,7 +96,7 @@
   [table action action-condition]
   (let [id (first (sentences/find-primary-key-columns table))]
     (str "CREATE OR REPLACE FUNCTION " (conditions/find-may-function-name action (:table table)) "()\n"
-         "RETURNS SETOF " (sentences/turn-type-into-postgres-type (sentences/find-column-type table id))
+         "RETURNS SETOF " (cellar/turn-column-type-into-postgres-type (sentences/find-column-type table id))
          " LANGUAGE plpgsql STABLE AS $$\n"
          "BEGIN\n"
          "  RETURN QUERY SELECT " (sentences/column-name id) " FROM " (cellar/turn-table-key-into-table-name (:table table))

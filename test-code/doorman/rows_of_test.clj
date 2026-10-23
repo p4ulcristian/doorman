@@ -29,31 +29,31 @@
            :roles   {"Staff" #{:batches/edit}}}}))
 
 (defn- table [k columns access]
-  {:table k :columns columns :indexes [] :references [] :triggers [] :on-change nil :access access})
+  {:table k :columns columns :indexes [] :uniques [] :checks [] :references [] :triggers [] :on-change nil :access access})
 
 (def ^:private shops
   (table :shops [[:shop/id :uuid {:primary-key? true}]]
          [{:allow :batches/edit :only #{:read} :to [:member :shop/id]}]))
 
 (def ^:private workstations
-  (table :workstations [[:workstation/id :uuid {:primary-key? true}] [:workstation/shop-id :uuid {:references :shop/id}]]
+  (table :workstations [[:workstation/id :uuid {:primary-key? true}] [:workstation/shop-id :uuid {:references {:to :shop/id :on-delete :refuse :on-update :refuse :checked-at :statement}}]]
          [{:allow :batches/edit :only #{:read} :to [:member :workstation/shop-id]}]))
 
 (def ^:private batches
-  (table :batches [[:batch/id :uuid {:primary-key? true}] [:batch/shop-id :uuid {:references :shop/id}]]
+  (table :batches [[:batch/id :uuid {:primary-key? true}] [:batch/shop-id :uuid {:references {:to :shop/id :on-delete :refuse :on-update :refuse :checked-at :statement}}]]
          [{:allow :batches/edit :only :all-of-the-action :to [:member :batch/shop-id]}]))
 
 (def ^:private moves   ; the move's log: the workstation is only a value here, no reference
-  (table :moves [[:move/id :uuid {:primary-key? true :default :random-uuid}] [:move/shop-id :uuid {:references :shop/id}]
+  (table :moves [[:move/id :uuid {:primary-key? true :default :random-uuid}] [:move/shop-id :uuid {:references {:to :shop/id :on-delete :refuse :on-update :refuse :checked-at :statement}}]
                  [:move/batch-id :uuid] [:move/workstation-id :uuid]]
          [{:allow :batches/edit :only #{:read :insert} :to [:member :move/shop-id]}]))
 
 (def ^:private parts
-  (table :parts [[:part/id :uuid {:primary-key? true}] [:part/shop-id :uuid {:references :shop/id}] [:part/public :boolean]]
+  (table :parts [[:part/id :uuid {:primary-key? true}] [:part/shop-id :uuid {:references {:to :shop/id :on-delete :refuse :on-update :refuse :checked-at :statement}}] [:part/public :boolean]]
          [{:allow :catalog/see :only #{:read} :to :anyone :when [:= :part/public true]}]))
 
 (def ^:private machines
-  (table :machines [[:machine/id :uuid {:primary-key? true}] [:machine/shop-id :uuid {:references :shop/id}]]
+  (table :machines [[:machine/id :uuid {:primary-key? true}] [:machine/shop-id :uuid {:references {:to :shop/id :on-delete :refuse :on-update :refuse :checked-at :statement}}]]
          [{:allow :machines/see :only #{:read} :to [:member :machine/shop-id]}]))
 
 (def ^:private tables [shops workstations batches moves parts machines])
@@ -160,7 +160,7 @@
   (run-sql! owner-pool "DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'doorman_app') THEN CREATE ROLE doorman_app LOGIN; END IF; END $$")
   (let [ready (into (doorman/put-gates-on-tables tables scope-kinds) (conj doorman/access-tables doorman/sessions-table doorman/tokens-table))]
     (doorman/install-access-functions! owner-pool tables scope-kinds)
-    (with-out-str @(:slow-part (cellar/migrate! owner-pool ready [] test-settings/migrate-options)))
+    (with-out-str @(:slow-part (cellar/migrate! owner-pool (test-settings/declare-tables ready) [] test-settings/migrate-options)))
     (cellar/grant-tables-to-role! owner-pool ready "doorman_app"))
   (run-sql! owner-pool (str "INSERT INTO shops VALUES ('" shop-a "'), ('" shop-b "'), ('" shop-c "')"))
   (run-sql! owner-pool (str "INSERT INTO workstations VALUES ('" station-a "', '" shop-a "'), ('" station-b "', '" shop-b "')"))

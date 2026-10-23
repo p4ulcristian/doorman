@@ -5,9 +5,14 @@
 
      {:table   :jobs
       :columns [[:job/id       :uuid {:primary-key? true}]
-                [:job/order-id :uuid {:references :order/id}]   ; the parent
-                [:job/shop-id  :uuid {:references :shop/id}]]   ; carried from it
-      :indexes [[:job/order-id]]
+                [:job/order-id :uuid {:references {:to :order/id :on-delete :refuse     ; the parent
+                                                   :on-update :refuse :checked-at :statement}}]
+                [:job/shop-id  :uuid {:references {:to :shop/id :on-delete :refuse      ; carried from it
+                                                   :on-update :refuse :checked-at :statement}}]]
+      :indexes [{:columns [[:job/order-id :ascending :nulls-last]]
+                 :method :btree :ops {} :unique? false :where nil}]
+      :uniques []
+      :checks  []
       :parent  {:column :job/order-id :carries {:job/shop-id :order/shop-id}}
       :access  [{:allow :jobs/see :to [:member :job/shop-id]}]}
 
@@ -39,9 +44,9 @@
   "The table the :parent column references (its one-column primary key),
    or nil."
   [table tables-by-key]
-  (let [references (:references (find-column-options table (get-in table [:parent :column])))]
-    (when references
-      (some (fn [[_ other]] (when (= [references] (sentences/find-primary-key-columns other)) other)) tables-by-key))))
+  (let [target (get-in (find-column-options table (get-in table [:parent :column])) [:references :to])]
+    (when target
+      (some (fn [[_ other]] (when (= [target] (sentences/find-primary-key-columns other)) other)) tables-by-key))))
 
 (defn- find-carried-pairs
   "The :carries as [[child column, parent column] …], in a stable order."
@@ -99,7 +104,9 @@
   (let [pairs (find-carried-pairs table-map)]
     {:columns   (into [column] (map first pairs))
      :to        (into (sentences/find-primary-key-columns (find-parent-table table-map tables-by-key)) (map second pairs))
-     :on-update :cascade}))
+     :on-delete :refuse
+     :on-update :cascade
+     :checked-at :statement}))
 
 (defn make-fill-trigger
   "The trigger that fills the carried columns (cellar's :triggers entry)."
@@ -109,7 +116,8 @@
    :timing    :before
    :events    #{:insert :update}
    :update-of [column]
-   :for-each  :row})
+   :for-each  :row
+   :when      nil})
 
 (defn put-link-and-fill-on-table
   "A table map with a :parent given its link and its fill, beside the
@@ -135,7 +143,7 @@
          "RETURNS trigger LANGUAGE plpgsql AS $$\n"
          "DECLARE before text DEFAULT coalesce(current_setting('doorman.passing', true), '');\n"
          (str/join (for [{:keys [mine local]} pairs]
-                     (str "        " local " " (sentences/turn-type-into-postgres-type (sentences/find-column-type table-map mine)) ";\n")))
+                     (str "        " local " " (cellar/turn-column-type-into-postgres-type (sentences/find-column-type table-map mine)) ";\n")))
          "BEGIN\n"
          "  IF NEW." own " IS NOT NULL THEN\n"
          "    PERFORM set_config('doorman.passing', 'on', true);\n"

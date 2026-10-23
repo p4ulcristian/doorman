@@ -26,7 +26,12 @@
                 [:session/person-id   :uuid]
                 [:session/created-at  :time/instant {:default :now}]
                 [:session/ends-at     :time/instant]]
-   :indexes    [[:session/person-id] [:session/ends-at]]
+   :indexes    [{:columns [[:session/person-id :ascending :nulls-last]]
+                 :method :btree :ops {} :unique? false :where nil}
+                {:columns [[:session/ends-at :ascending :nulls-last]]
+                 :method :btree :ops {} :unique? false :where nil}]
+   :uniques    []
+   :checks     []
    :references []
    :triggers   []
    :gates      nil
@@ -39,6 +44,8 @@
                  [:scope/parent-kind :string {:optional? true}]
                  [:scope/parent-id   :uuid   {:optional? true}]]
     :indexes    []
+    :uniques    []
+    :checks     []
     :references []
     :triggers   []
     :gates      nil
@@ -48,6 +55,8 @@
                  [:role/scope-id   :uuid   {:primary-key? true}]
                  [:role/name       :string {:primary-key? true}]]
     :indexes    []
+    :uniques    []
+    :checks     []
     :references []
     :triggers   []
     :gates      nil
@@ -58,6 +67,8 @@
                  [:role-action/role       :string {:primary-key? true}]
                  [:role-action/action     :string {:primary-key? true}]]
     :indexes    []
+    :uniques    []
+    :checks     []
     :references []
     :triggers   []
     :gates      nil
@@ -67,7 +78,10 @@
                  [:membership/scope-kind :string {:primary-key? true}]
                  [:membership/scope-id   :uuid   {:primary-key? true}]
                  [:membership/role       :string]]
-    :indexes    [[:membership/scope-kind :membership/scope-id]]
+    :indexes    [{:columns [[:membership/scope-kind :ascending :nulls-last] [:membership/scope-id :ascending :nulls-last]]
+                  :method :btree :ops {} :unique? false :where nil}]
+    :uniques    []
+    :checks     []
     :references []
     :triggers   []
     :gates      nil
@@ -76,7 +90,8 @@
 (def ^:private access-tables-of-v0-7
   "v0.7's access tables, which this migration reached: v0.6's, doorman.scopes
    with its parent index. (v0.7 to today's: doorman.roles-migration-test.)"
-  (assoc-in access-tables-of-v0-6 [0 :indexes] [[:scope/parent-kind :scope/parent-id]]))
+  (assoc-in access-tables-of-v0-6 [0 :indexes] [{:columns [[:scope/parent-kind :ascending :nulls-last] [:scope/parent-id :ascending :nulls-last]]
+                                                 :method :btree :ops {} :unique? false :where nil}]))
 
 (def ^:private settings
   {:cookie-name "app_session" :session-days 30 :visitor-session-days 2 :renew-after-minutes 60
@@ -115,12 +130,12 @@
     (let [pool (test-settings/start-pool! (System/getenv "DOORMAN_TEST_USER") 2)]
       (try
         (run-sql! pool "DROP SCHEMA IF EXISTS doorman CASCADE; DROP SCHEMA IF EXISTS cellar CASCADE")
-        @(:slow-part (cellar/migrate! pool (conj access-tables-of-v0-6 sessions-table-of-v0-6) [] test-settings/migrate-options))
+        @(:slow-part (cellar/migrate! pool (test-settings/declare-tables (conj access-tables-of-v0-6 sessions-table-of-v0-6)) [] test-settings/migrate-options))
         (write-session-of-v0-6! pool "anna-old-cookie" anna)
         (write-session-of-v0-6! pool "anna-other-device" anna)
         (write-session-of-v0-6! pool "bob-old-cookie" bob)
         (let [today (conj access-tables-of-v0-7 doorman/sessions-table)
-              plan  (cellar/make-plan-from-tables pool today [])]
+              plan  (cellar/make-plan-from-tables pool (test-settings/declare-tables today) [])]
           (testing "cellar's plan has no stop and needs no change entry: two columns added, the person made optional, an index"
             (is (= [] (:stops plan)))
             (is (= #{"ALTER TABLE doorman.sessions ADD COLUMN session__visitor_id uuid"
@@ -129,8 +144,8 @@
                    (set (map :sql (:instant plan)))))
             (is (= 1 (count (:slow plan))))
             (is (str/starts-with? (:sql (first (:slow plan))) "CREATE INDEX CONCURRENTLY IF NOT EXISTS doorman_scopes_scope__parent_kind_scope__parent_id_idx ON doorman.scopes")))
-          @(:slow-part (cellar/migrate! pool (conj today doorman/tokens-table) [] test-settings/migrate-options))
-          (is (cellar/does-database-match-tables? pool (conj today doorman/tokens-table) []) "nothing left to do; the tokens' table made by the same plan")
+          @(:slow-part (cellar/migrate! pool (test-settings/declare-tables (conj today doorman/tokens-table)) [] test-settings/migrate-options))
+          (is (cellar/does-database-match-tables? pool (test-settings/declare-tables (conj today doorman/tokens-table)) []) "nothing left to do; the tokens' table made by the same plan")
           (testing "every row survives, with no flags and no visitor"
             (is (= [[anna "" nil] [anna "" nil] [bob "" nil]]
                    (sort-by (comp str first)

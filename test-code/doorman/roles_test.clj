@@ -27,12 +27,12 @@
 
 (def ^:private shops
   {:table :shops :columns [[:shop/id :uuid {:primary-key? true}]]
-   :indexes [] :references [] :triggers [] :on-change nil :access :public})
+   :indexes [] :uniques [] :checks [] :references [] :triggers [] :on-change nil :access :public})
 
 (def ^:private orders
   {:table :orders
-   :columns [[:order/id :uuid {:primary-key? true}] [:order/shop-id :uuid {:references :shop/id}] [:order/approved :boolean]]
-   :indexes [[:order/shop-id]] :references [] :triggers [] :on-change nil
+   :columns [[:order/id :uuid {:primary-key? true}] [:order/shop-id :uuid {:references {:to :shop/id :on-delete :refuse :on-update :refuse :checked-at :statement}}] [:order/approved :boolean]]
+   :indexes [{:columns [[:order/shop-id :ascending :nulls-last]] :method :btree :ops {} :unique? false :where nil}] :uniques [] :checks [] :references [] :triggers [] :on-change nil
    :access [{:allow #{:orders/see :orders/edit :qc/approve} :only :all-of-the-action :to [:member :order/shop-id]}]})
 
 (def ^:private tables [shops orders])
@@ -84,7 +84,7 @@
       (run-sql! owner-pool "DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'doorman_app') THEN CREATE ROLE doorman_app LOGIN; END IF; END $$")
       (let [ready-tables (into (doorman/put-gates-on-tables tables scope-kinds) (conj doorman/access-tables doorman/sessions-table doorman/tokens-table))]
         (doorman/install-access-functions! owner-pool tables scope-kinds)
-        (with-out-str @(:slow-part (cellar/migrate! owner-pool ready-tables [] test-settings/migrate-options)))
+        (with-out-str @(:slow-part (cellar/migrate! owner-pool (test-settings/declare-tables ready-tables) [] test-settings/migrate-options)))
         (cellar/grant-tables-to-role! owner-pool ready-tables "doorman_app"))
       (run-sql! owner-pool (str "INSERT INTO shops VALUES ('" hotcoats "'), ('" other-shop "')"))
       (run-sql! owner-pool (str "INSERT INTO orders VALUES ('" order-1 "', '" hotcoats "', false), ('" order-2 "', '" other-shop "', false)"))

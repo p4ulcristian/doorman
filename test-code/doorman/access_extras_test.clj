@@ -48,23 +48,30 @@
                :denies  []}}))
 
 (def ^:private companies
-  {:table :companies :columns [[:company/id :uuid {:primary-key? true}]] :indexes [] :references [] :triggers [] :on-change nil :access :public})
+  {:table :companies :columns [[:company/id :uuid {:primary-key? true}]] :indexes [] :uniques [] :checks [] :references [] :triggers [] :on-change nil :access :public})
 
 (def ^:private shops
-  {:table :shops :columns [[:shop/id :uuid {:primary-key? true}] [:shop/status :string]] :indexes [] :references [] :triggers [] :on-change nil
+  {:table :shops :columns [[:shop/id :uuid {:primary-key? true}] [:shop/status :string]] :indexes [] :uniques [] :checks [] :references [] :triggers [] :on-change nil
    :access :public})
 
 (def ^:private partners
-  {:table :partners :columns [[:partner/id :uuid {:primary-key? true}]] :indexes [] :references [] :triggers [] :on-change nil :access :public})
+  {:table :partners :columns [[:partner/id :uuid {:primary-key? true}]] :indexes [] :uniques [] :checks [] :references [] :triggers [] :on-change nil :access :public})
 
 (def ^:private orders
   {:table     :orders
    :columns   [[:order/id :uuid {:primary-key? true :default :random-uuid}]
-               [:order/shop-id :uuid {:references :shop/id}]
+               [:order/shop-id :uuid {:references {:to :shop/id :on-delete :refuse :on-update :refuse :checked-at :statement}}]
                [:order/customer-id :uuid {:optional? true}]
                [:order/visitor-id :uuid {:optional? true}]
                [:order/status :string]]
-   :indexes   [[:order/shop-id] [:order/customer-id] [:order/visitor-id]]
+   :indexes   [{:columns [[:order/shop-id :ascending :nulls-last]]
+                :method :btree :ops {} :unique? false :where nil}
+               {:columns [[:order/customer-id :ascending :nulls-last]]
+                :method :btree :ops {} :unique? false :where nil}
+               {:columns [[:order/visitor-id :ascending :nulls-last]]
+                :method :btree :ops {} :unique? false :where nil}]
+   :uniques   []
+   :checks    []
    :references []
    :triggers   []
    :on-change nil
@@ -82,11 +89,16 @@
 (def ^:private agreements
   {:table     :agreements
    :columns   [[:agreement/id :uuid {:primary-key? true}]
-               [:agreement/shop-id :uuid {:references :shop/id}]
-               [:agreement/partner-id :uuid {:references :partner/id}]
+               [:agreement/shop-id :uuid {:references {:to :shop/id :on-delete :refuse :on-update :refuse :checked-at :statement}}]
+               [:agreement/partner-id :uuid {:references {:to :partner/id :on-delete :refuse :on-update :refuse :checked-at :statement}}]
                [:agreement/status :string]
                [:agreement/note :string]]
-   :indexes   [[:agreement/shop-id] [:agreement/partner-id]]
+   :indexes   [{:columns [[:agreement/shop-id :ascending :nulls-last]]
+                :method :btree :ops {} :unique? false :where nil}
+               {:columns [[:agreement/partner-id :ascending :nulls-last]]
+                :method :btree :ops {} :unique? false :where nil}]
+   :uniques   []
+   :checks    []
    :references []
    :triggers   []
    :on-change nil
@@ -167,7 +179,7 @@
   (run-sql! owner-pool "DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'doorman_app') THEN CREATE ROLE doorman_app LOGIN; END IF; END $$")
   (let [ready (into (doorman/put-gates-on-tables tables scope-kinds) (conj doorman/access-tables doorman/sessions-table doorman/tokens-table))]
     (doorman/install-access-functions! owner-pool tables scope-kinds)
-    (with-out-str @(:slow-part (cellar/migrate! owner-pool ready [] test-settings/migrate-options)))
+    (with-out-str @(:slow-part (cellar/migrate! owner-pool (test-settings/declare-tables ready) [] test-settings/migrate-options)))
     (cellar/grant-tables-to-role! owner-pool ready "doorman_app"))
   (run-sql! owner-pool (str "INSERT INTO companies VALUES ('" company-1 "')"))
   (run-sql! owner-pool (str "INSERT INTO shops VALUES ('" shop-7 "', 'open'), ('" shop-8 "', 'suspended'), ('" shop-9 "', 'open')"))

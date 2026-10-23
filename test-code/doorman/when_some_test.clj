@@ -29,23 +29,23 @@
 
 (def ^:private shops
   {:table :shops :columns [[:shop/id :uuid {:primary-key? true}] [:shop/suspended-at :time/instant {:optional? true}]]
-   :indexes [] :references [] :triggers [] :on-change nil :access :public})
+   :indexes [] :uniques [] :checks [] :references [] :triggers [] :on-change nil :access :public})
 
 (def ^:private categories
   {:table :categories
    :columns [[:category/id :uuid {:primary-key? true}]
-             [:category/shop-id :uuid {:optional? true :references :shop/id}]   ; nil: the universal catalogue's
+             [:category/shop-id :uuid {:optional? true :references {:to :shop/id :on-delete :refuse :on-update :refuse :checked-at :statement}}]   ; nil: the universal catalogue's
              [:category/name :string]]
-   :indexes [[:category/shop-id]] :references [] :triggers [] :on-change nil
+   :indexes [{:columns [[:category/shop-id :ascending :nulls-last]] :method :btree :ops {} :unique? false :where nil}] :uniques [] :checks [] :references [] :triggers [] :on-change nil
    :access [{:allow :catalogue/see :only #{:read} :to :anyone :when [:some :category/shop-id]}]})
 
 (def ^:private parts
   {:table :parts
    :columns [[:part/id :uuid {:primary-key? true}]
-             [:part/shop-id :uuid {:references :shop/id}]
+             [:part/shop-id :uuid {:references {:to :shop/id :on-delete :refuse :on-update :refuse :checked-at :statement}}]
              [:part/pricing :int {:optional? true}]
              [:part/template-id :uuid {:optional? true}]]
-   :indexes [[:part/shop-id]] :references [] :triggers [] :on-change nil
+   :indexes [{:columns [[:part/shop-id :ascending :nulls-last]] :method :btree :ops {} :unique? false :where nil}] :uniques [] :checks [] :references [] :triggers [] :on-change nil
    :access [{:allow :prices/see :only #{:read} :to :anyone :when [:or [:some :part/pricing] [:some :part/template-id]]}
             {:allow :parts/edit :only :all-of-the-action :to [:member :part/shop-id]}]})
 
@@ -97,7 +97,7 @@
   (run-sql! owner-pool "DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'doorman_app') THEN CREATE ROLE doorman_app LOGIN; END IF; END $$")
   (let [ready (into (doorman/put-gates-on-tables tables scope-kinds) (conj doorman/access-tables doorman/sessions-table doorman/tokens-table))]
     (doorman/install-access-functions! owner-pool tables scope-kinds)
-    (with-out-str @(:slow-part (cellar/migrate! owner-pool ready [] test-settings/migrate-options)))
+    (with-out-str @(:slow-part (cellar/migrate! owner-pool (test-settings/declare-tables ready) [] test-settings/migrate-options)))
     (cellar/grant-tables-to-role! owner-pool ready "doorman_app"))
   (run-sql! owner-pool (str "INSERT INTO shops VALUES ('" shop-a "', NULL), ('" shop-c "', now())"))
   (run-sql! owner-pool (str "INSERT INTO categories VALUES ('" category-a "', '" shop-a "', 'Wheels'), ('" category-universal "', NULL, 'Universal frames')"))

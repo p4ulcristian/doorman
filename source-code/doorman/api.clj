@@ -27,7 +27,8 @@
    table maps become SQL conditions (make-sql-conditions): the check in
    front of every handler's steps (put-access-into-handlers), and the
    gates, Postgres's row rules (put-gates-on-tables, for cellar), with the
-   functions they call (install-access-functions!). The leak test proves
+   functions they call (function-files, declared to cellar, and
+   install-access-functions!, those made from the sentences). The leak test proves
    them (find-leaks); explain-refusal says why one message would be
    refused.
 
@@ -82,7 +83,12 @@
                [:session/flags       :string       {:default ""}]
                [:session/created-at  :time/instant {:default :now}]
                [:session/ends-at     :time/instant]]
-   :indexes   [[:session/person-id] [:session/ends-at]]
+   :indexes   [{:columns [[:session/person-id :ascending :nulls-last]]
+                :method :btree :ops {} :unique? false :where nil}
+               {:columns [[:session/ends-at :ascending :nulls-last]]
+                :method :btree :ops {} :unique? false :where nil}]
+   :uniques   []
+   :checks    []
    :references []
    :triggers   []
    :gates     nil
@@ -100,7 +106,12 @@
                [:token/shown-start :string]
                [:token/created-at  :time/instant {:default :now}]
                [:token/ends-at     :time/instant]]
-   :indexes   [[:token/person-id] [:token/ends-at]]
+   :indexes   [{:columns [[:token/person-id :ascending :nulls-last]]
+                :method :btree :ops {} :unique? false :where nil}
+               {:columns [[:token/ends-at :ascending :nulls-last]]
+                :method :btree :ops {} :unique? false :where nil}]
+   :uniques   []
+   :checks    []
    :references []
    :triggers   []
    :gates     nil
@@ -235,7 +246,10 @@
                 [:scope/id          :uuid   {:primary-key? true}]
                 [:scope/parent-kind :string {:optional? true}]   ; the scope above it, if any
                 [:scope/parent-id   :uuid   {:optional? true}]]
-    :indexes   [[:scope/parent-kind :scope/parent-id]]
+    :indexes   [{:columns [[:scope/parent-kind :ascending :nulls-last] [:scope/parent-id :ascending :nulls-last]]
+                 :method :btree :ops {} :unique? false :where nil}]
+    :uniques   []
+    :checks    []
     :references []
     :triggers   []
     :gates     nil
@@ -245,15 +259,21 @@
                 [:role/scope-kind :string]
                 [:role/scope-id   :uuid]
                 [:role/name       :string]]                       ; unique in its scope: doorman's functions keep it so
-    :indexes   [[:role/scope-kind :role/scope-id]]
+    :indexes   [{:columns [[:role/scope-kind :ascending :nulls-last] [:role/scope-id :ascending :nulls-last]]
+                 :method :btree :ops {} :unique? false :where nil}]
+    :uniques   []
+    :checks    []
     :references []
     :triggers   []
     :gates     nil
     :on-change nil}
    {:table     :doorman/role-actions
-    :columns   [[:role-action/role-id :uuid   {:primary-key? true :references :role/id}]
+    :columns   [[:role-action/role-id :uuid   {:primary-key? true :references {:to :role/id :on-delete :refuse :on-update :refuse
+                                                                                :checked-at :statement}}]
                 [:role-action/action  :string {:primary-key? true}]]
     :indexes   []
+    :uniques   []
+    :checks    []
     :references []
     :triggers   []
     :gates     nil
@@ -262,7 +282,10 @@
     :columns   [[:membership/person-id  :uuid   {:primary-key? true}]
                 [:membership/scope-kind :string {:primary-key? true}]
                 [:membership/scope-id   :uuid   {:primary-key? true}]]
-    :indexes   [[:membership/scope-kind :membership/scope-id]]
+    :indexes   [{:columns [[:membership/scope-kind :ascending :nulls-last] [:membership/scope-id :ascending :nulls-last]]
+                 :method :btree :ops {} :unique? false :where nil}]
+    :uniques   []
+    :checks    []
     :references []
     :triggers   []
     :gates     nil
@@ -272,11 +295,16 @@
                 [:membership-role/scope-kind :string {:primary-key? true}]
                 [:membership-role/scope-id   :uuid   {:primary-key? true}]
                 [:membership-role/role-id    :uuid   {:primary-key? true}]]
-    :indexes   [[:membership-role/role-id]]
+    :indexes   [{:columns [[:membership-role/role-id :ascending :nulls-last]]
+                 :method :btree :ops {} :unique? false :where nil}]
+    :uniques   []
+    :checks    []
     ;; the role is one of the membership's scope's
     :references [{:columns   [:membership-role/role-id :membership-role/scope-kind :membership-role/scope-id]
                   :to        [:role/id :role/scope-kind :role/scope-id]
-                  :on-update :refuse}]
+                  :on-delete :refuse
+                  :on-update :refuse
+                  :checked-at :statement}]
     :triggers   []
     :gates     nil
     :on-change nil}])
@@ -289,6 +317,8 @@
                 [:role/scope-id   :uuid   {:primary-key? true}]
                 [:role/name       :string {:primary-key? true}]]
     :indexes   []
+    :uniques   []
+    :checks    []
     :references []
     :triggers   []
     :gates     nil
@@ -299,6 +329,8 @@
                 [:role-action/role       :string {:primary-key? true}]
                 [:role-action/action     :string {:primary-key? true}]]
     :indexes   []
+    :uniques   []
+    :checks    []
     :references []
     :triggers   []
     :gates     nil
@@ -308,7 +340,10 @@
                 [:membership/scope-kind :string {:primary-key? true}]
                 [:membership/scope-id   :uuid   {:primary-key? true}]
                 [:membership/role       :string]]
-    :indexes   [[:membership/scope-kind :membership/scope-id]]
+    :indexes   [{:columns [[:membership/scope-kind :ascending :nulls-last] [:membership/scope-id :ascending :nulls-last]]
+                 :method :btree :ops {} :unique? false :where nil}]
+    :uniques   []
+    :checks    []
     :references []
     :triggers   []
     :gates     nil
@@ -329,12 +364,15 @@
       part.
 
      ;; 1.
-     @(:slow-part (cellar/migrate! pool (into tables (:old-tables doorman/access-move-from-v0-7))
+     @(:slow-part (cellar/migrate! pool (update declared :tables into (:old-tables doorman/access-move-from-v0-7))
                                    (into changes (:renames doorman/access-move-from-v0-7)) options))
      ;; 2.
-     (cellar/migrate! pool tables (-> changes (into (:renames doorman/access-move-from-v0-7))
-                                      (into (:copy-and-drops doorman/access-move-from-v0-7)))
+     (cellar/migrate! pool declared (-> changes (into (:renames doorman/access-move-from-v0-7))
+                                        (into (:copy-and-drops doorman/access-move-from-v0-7)))
                       options)
+
+   declared is what the app passes cellar, {:tables :extensions
+   :functions :views}.
 
    Between the two the new tables are empty: nobody holds anything there,
    so the app doesn't start before step 2."
@@ -486,31 +524,62 @@
   [tables scope-kinds]
   (conditions/make-sql-conditions tables scope-kinds))
 
-(def ^:private create-access-functions
-  (cellar/make-query-from-sql-file "doorman/create_access_functions.sql"))
+(def function-files
+  "The .sql files of the SQL functions the check and the gates read who is
+   asking from, for cellar's :functions beside the app's own (cellar makes
+   them before the tables, so the gates can call them, and drops a
+   function in doorman's folder that no file makes):
+   doorman.find_asking_person(), find_asking_visitor(),
+   find_asking_system(), find_scopes_holding(kind, action),
+   has_session_flag(flag), is_passing(), find_moving_visitor(),
+   find_moving_person(), is_acting(action). They read two settings of the
+   transaction: doorman.asking, who is asking, as JSON (doorman.asking):
+
+     {\"person\": \"uuid or null\", \"visitor\": \"uuid or null\", \"flags\": [\"impersonated\", …],
+      \"acting\": \"orders/edit\" or null, \"every_action\": false,
+      \"holding\": {\"shop orders/edit\": [\"scope id\", …]},
+      \"moving\": {\"visitor\": \"uuid\", \"person\": \"uuid\"}}   ; only while sign-in moves a visitor's rows
+     {\"system\": \"postbox\"}                                ; only while a named system actor runs
+
+   \"acting\" is the one action a handler's steps act as: a person's
+   sentences count only for it (is_acting), and \"holding\" lists only the
+   scopes the handler acts in; \"every_action\" true, every action counts
+   (run-as-asker-of-request!, \"what may I do?\", explain-refusal, the
+   check itself, a named system actor's :anyone rows). And
+   doorman.passing, 'on' only while one of doorman's own functions reads
+   past the gates (is_passing). The app's own role may call them once
+   cellar/grant-tables-to-role! is given doorman's tables (it grants their
+   folder, and the functions in it)."
+  (mapv #(str "doorman/sql_functions/" % ".sql")
+        ["find_asking_person" "find_asking_visitor" "find_asking_system" "find_scopes_holding"
+         "has_session_flag" "is_passing" "find_moving_visitor" "find_moving_person" "is_acting"]))
+
+(def ^:private create-doorman-folder
+  (cellar/make-query-from-sql-text "doorman's folder" "CREATE SCHEMA IF NOT EXISTS doorman"))
 
 (defn install-access-functions!
-  "Installs, or replaces, the folder doorman and the SQL functions the
-   check and the gates read who is asking from (doorman.find_asking_person(),
-   find_asking_visitor(), find_scopes_holding(kind, action),
-   is_acting(action), has_session_flag(flag), is_passing(),
-   find_moving_visitor(), find_moving_person()), and those the app's sentences and denies need:
-   a :via's (doorman.via_…), a scope state's (doorman.denied_…), the guard
-   of a table a :via reads (doorman.unchanged_…), and, per table with a
-   one-column primary key and per action of its sentences, the one a query
-   file calls to narrow a list to the rows the asker may do that action
-   on:
+  "Makes the folder doorman, if it isn't there, and installs, or replaces, the SQL functions the app's sentences and
+   denies need, made from them: a :via's (doorman.via_…), a scope
+   state's (doorman.denied_…), the guard of a table a :via reads
+   (doorman.unchanged_…), a record under a record's fill
+   (doorman.fill_…), and, per table with a one-column primary key and per
+   action of its sentences, the one a query file calls to narrow a list
+   to the rows the asker may do that action on:
 
      SELECT order__id, order__note FROM orders
      WHERE order__id IN (SELECT * FROM doorman.\"may orders/edit on orders\"())
 
    The sentences are checked first. Run it as the owner, before migrate:
-   Postgres refuses a gate whose function doesn't exist yet. The app's own
-   role may call them once cellar/grant-tables-to-role! is given doorman's
-   tables (it grants their folder, and the functions in it)."
+   Postgres refuses a gate whose function doesn't exist yet.
+
+   Not declared to cellar: they are made from data, and cellar's
+   :functions takes only .sql files. cellar's migrate drops every function
+   in doorman's folder that no declared file makes, these among them (and
+   fails where a gate or a trigger still calls one); how they are declared
+   is not yet decided."
   [pool tables scope-kinds]
   (let [statements (functions/make-function-statements tables scope-kinds)]
-    (cellar/run-statement! pool create-access-functions {})
+    (cellar/run-statement! pool create-doorman-folder {})
     (doseq [statement statements]
       (cellar/run-statement! pool (cellar/make-query-from-sql-text "a function of doorman's" statement) {}))))
 
@@ -575,7 +644,11 @@
    kind's table) must have :access, or :access :public on purpose;
    otherwise this throws.
 
-     (cellar/migrate! pool (doorman/put-gates-on-tables tables scope-kinds) changes migrate-options)"
+     (cellar/migrate! pool {:tables     (doorman/put-gates-on-tables tables scope-kinds)
+                            :extensions []
+                            :functions  doorman/function-files   ; with the app's own
+                            :views      []}
+                      changes migrate-options)"
   [tables scope-kinds]
   (let [conditions    (conditions/make-sql-conditions tables scope-kinds)
         tables-by-key (into {} (map (juxt :table identity)) tables)]

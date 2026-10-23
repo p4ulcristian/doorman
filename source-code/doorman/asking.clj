@@ -1,7 +1,7 @@
 (ns doorman.asking
   "Who is asking, told to Postgres for one transaction: the setting
    doorman.asking, as JSON, which doorman's SQL functions read (see
-   create_access_functions.sql)."
+   sql_functions/ and doorman.api/function-files)."
   (:require
    [cellar.api :as cellar]
    [doorman.memberships :as memberships]

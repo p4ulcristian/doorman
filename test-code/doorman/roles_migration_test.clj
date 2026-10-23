@@ -19,19 +19,19 @@
   [{:table :doorman/scopes
     :columns [[:scope/kind :string {:primary-key? true}] [:scope/id :uuid {:primary-key? true}]
               [:scope/parent-kind :string {:optional? true}] [:scope/parent-id :uuid {:optional? true}]]
-    :indexes [[:scope/parent-kind :scope/parent-id]] :references [] :triggers [] :gates nil :on-change nil}
+    :indexes [{:columns [[:scope/parent-kind :ascending :nulls-last] [:scope/parent-id :ascending :nulls-last]] :method :btree :ops {} :unique? false :where nil}] :uniques [] :checks [] :references [] :triggers [] :gates nil :on-change nil}
    {:table :doorman/roles
     :columns [[:role/scope-kind :string {:primary-key? true}] [:role/scope-id :uuid {:primary-key? true}]
               [:role/name :string {:primary-key? true}]]
-    :indexes [] :references [] :triggers [] :gates nil :on-change nil}
+    :indexes [] :uniques [] :checks [] :references [] :triggers [] :gates nil :on-change nil}
    {:table :doorman/role-actions
     :columns [[:role-action/scope-kind :string {:primary-key? true}] [:role-action/scope-id :uuid {:primary-key? true}]
               [:role-action/role :string {:primary-key? true}] [:role-action/action :string {:primary-key? true}]]
-    :indexes [] :references [] :triggers [] :gates nil :on-change nil}
+    :indexes [] :uniques [] :checks [] :references [] :triggers [] :gates nil :on-change nil}
    {:table :doorman/memberships
     :columns [[:membership/person-id :uuid {:primary-key? true}] [:membership/scope-kind :string {:primary-key? true}]
               [:membership/scope-id :uuid {:primary-key? true}] [:membership/role :string]]
-    :indexes [[:membership/scope-kind :membership/scope-id]] :references [] :triggers [] :gates nil :on-change nil}])
+    :indexes [{:columns [[:membership/scope-kind :ascending :nulls-last] [:membership/scope-id :ascending :nulls-last]] :method :btree :ops {} :unique? false :where nil}] :uniques [] :checks [] :references [] :triggers [] :gates nil :on-change nil}])
 
 (def ^:private scope-kinds
   (doorman/check-scope-kinds
@@ -79,7 +79,7 @@
           people [paul anna dora bob eve]]
       (try
         (run-sql! pool "DROP SCHEMA IF EXISTS doorman CASCADE; DROP SCHEMA IF EXISTS cellar CASCADE")
-        (with-out-str @(:slow-part (cellar/migrate! pool access-tables-of-v0-7 [] test-settings/migrate-options)))
+        (with-out-str @(:slow-part (cellar/migrate! pool (test-settings/declare-tables access-tables-of-v0-7) [] test-settings/migrate-options)))
         (write-scope-of-v0-7! pool :company company nil paul)
         (write-scope-of-v0-7! pool :shop shop-a company paul)
         (write-scope-of-v0-7! pool :shop shop-b company paul)
@@ -96,19 +96,19 @@
                                                                                            {}))
                                             count)]))]
           (testing "today's maps alone stop: a role's primary key changed"
-            (is (seq (:stops (cellar/make-plan-from-tables pool doorman/access-tables [])))))
+            (is (seq (:stops (cellar/make-plan-from-tables pool (test-settings/declare-tables doorman/access-tables) [])))))
           (testing "1. v0.7's tables renamed and kept, today's made beside them"
             (let [tables  (into doorman/access-tables (:old-tables move))
                   changes (:renames move)]
-              (is (= [] (:stops (cellar/make-plan-from-tables pool tables changes))))
-              (with-out-str @(:slow-part (cellar/migrate! pool tables changes test-settings/migrate-options)))
-              (is (cellar/does-database-match-tables? pool tables changes))
+              (is (= [] (:stops (cellar/make-plan-from-tables pool (test-settings/declare-tables tables) changes))))
+              (with-out-str @(:slow-part (cellar/migrate! pool (test-settings/declare-tables tables) changes test-settings/migrate-options)))
+              (is (cellar/does-database-match-tables? pool (test-settings/declare-tables tables) changes))
               (is (= {} (doorman/list-actions-of-person pool scope-kinds anna)) "between the two steps, nobody holds anything")))
           (testing "2. the rows copied, the old tables dropped, in one transaction"
             (let [changes (into (:renames move) (:copy-and-drops move))]
-              (is (= [] (:stops (cellar/make-plan-from-tables pool doorman/access-tables changes))))
-              (with-out-str @(:slow-part (cellar/migrate! pool doorman/access-tables changes test-settings/migrate-options)))
-              (is (cellar/does-database-match-tables? pool doorman/access-tables changes) "nothing left to do")
+              (is (= [] (:stops (cellar/make-plan-from-tables pool (test-settings/declare-tables doorman/access-tables) changes))))
+              (with-out-str @(:slow-part (cellar/migrate! pool (test-settings/declare-tables doorman/access-tables) changes test-settings/migrate-options)))
+              (is (cellar/does-database-match-tables? pool (test-settings/declare-tables doorman/access-tables) changes) "nothing left to do")
               (is (= [] (cellar/find-rows pool (cellar/make-query-from-sql-text "test" "SELECT table_name AS table__name FROM information_schema.tables WHERE table_name LIKE '%of_v0_7'") {}))
                   "the old tables are gone")))
           (testing "every person keeps their actions, by role ids now"

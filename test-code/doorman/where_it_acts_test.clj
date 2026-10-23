@@ -42,7 +42,7 @@
 
 (def ^:private shops
   {:table :shops :columns [[:shop/id :uuid {:primary-key? true}] [:shop/name :string] [:shop/status :string]]
-   :indexes [] :references [] :triggers [] :on-change nil
+   :indexes [] :uniques [] :checks [] :references [] :triggers [] :on-change nil
    :access [{:allow :shops/edit :only :all-of-the-action :to [:member :shop/id]}              ; the scope's own row
             {:allow :shops/lift :only :all-of-the-action :to [:member :platform :shops/lift]}  ; the app's staff
             {:allow :billing/mark :only :all-of-the-action :to [:system :billing]}]})
@@ -50,34 +50,34 @@
 (def ^:private machines
   {:table :machines
    :columns [[:machine/id :uuid {:primary-key? true :default :random-uuid}]
-             [:machine/shop-id :uuid {:references :shop/id}]]
-   :indexes [[:machine/shop-id]] :references [] :triggers [] :on-change nil
+             [:machine/shop-id :uuid {:references {:to :shop/id :on-delete :refuse :on-update :refuse :checked-at :statement}}]]
+   :indexes [{:columns [[:machine/shop-id :ascending :nulls-last]] :method :btree :ops {} :unique? false :where nil}] :uniques [] :checks [] :references [] :triggers [] :on-change nil
    :access [{:allow :machines/edit :only :all-of-the-action :to [:member :machine/shop-id]}
             {:allow :workstations/edit :only :all-of-the-action :to [:member :machine/shop-id]}]})   ; another action writes machines
 
 (def ^:private orders
   {:table :orders
    :columns [[:order/id :uuid {:primary-key? true}]
-             [:order/shop-id :uuid {:references :shop/id}]]
-   :indexes [[:order/shop-id]] :references [] :triggers [] :on-change nil
+             [:order/shop-id :uuid {:references {:to :shop/id :on-delete :refuse :on-update :refuse :checked-at :statement}}]]
+   :indexes [{:columns [[:order/shop-id :ascending :nulls-last]] :method :btree :ops {} :unique? false :where nil}] :uniques [] :checks [] :references [] :triggers [] :on-change nil
    :access [{:allow :orders/edit :only :all-of-the-action :to [:member :order/shop-id]}]})
 
 (def ^:private ledger-entries
   {:table :ledger-entries
    :columns [[:ledger-entry/id :uuid {:primary-key? true :default :random-uuid}]
-             [:ledger-entry/shop-id :uuid {:references :shop/id}]
+             [:ledger-entry/shop-id :uuid {:references {:to :shop/id :on-delete :refuse :on-update :refuse :checked-at :statement}}]
              [:ledger-entry/order-id :uuid]
              [:ledger-entry/amount :int]]
-   :indexes [[:ledger-entry/shop-id]] :references [] :triggers [] :on-change nil
+   :indexes [{:columns [[:ledger-entry/shop-id :ascending :nulls-last]] :method :btree :ops {} :unique? false :where nil}] :uniques [] :checks [] :references [] :triggers [] :on-change nil
    :access [{:allow :payouts/edit :only :all-of-the-action :to [:member :ledger-entry/shop-id]}
             {:allow :orders/edit :only #{:read :insert :update} :to [:member :ledger-entry/shop-id]}]})
 
 (def ^:private workstations
   {:table :workstations
    :columns [[:workstation/id :uuid {:primary-key? true}]
-             [:workstation/shop-id :uuid {:references :shop/id}]
+             [:workstation/shop-id :uuid {:references {:to :shop/id :on-delete :refuse :on-update :refuse :checked-at :statement}}]
              [:workstation/name :string]]
-   :indexes [[:workstation/shop-id]] :references [] :triggers [] :on-change nil
+   :indexes [{:columns [[:workstation/shop-id :ascending :nulls-last]] :method :btree :ops {} :unique? false :where nil}] :uniques [] :checks [] :references [] :triggers [] :on-change nil
    :access [{:allow :workstations/edit :only :all-of-the-action :to [:member :workstation/shop-id]}
             {:allow :orders/edit :only #{:read} :to [:member :workstation/shop-id]}]})
 
@@ -199,7 +199,7 @@
   (run-sql! owner-pool "DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'doorman_app') THEN CREATE ROLE doorman_app LOGIN; END IF; END $$")
   (let [ready (into (doorman/put-gates-on-tables tables scope-kinds) (conj doorman/access-tables doorman/sessions-table doorman/tokens-table))]
     (doorman/install-access-functions! owner-pool tables scope-kinds)
-    (with-out-str @(:slow-part (cellar/migrate! owner-pool ready [] test-settings/migrate-options)))
+    (with-out-str @(:slow-part (cellar/migrate! owner-pool (test-settings/declare-tables ready) [] test-settings/migrate-options)))
     (cellar/grant-tables-to-role! owner-pool ready "doorman_app"))
   (run-sql! owner-pool (str "INSERT INTO shops VALUES ('" shop-a "', 'A', 'open'), ('" shop-b "', 'B', 'open'), ('" shop-c "', 'C', 'suspended')"))
   (run-sql! owner-pool (str "INSERT INTO orders VALUES ('" order-a "', '" shop-a "'), ('" order-b "', '" shop-b "')"))

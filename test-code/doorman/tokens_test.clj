@@ -34,13 +34,13 @@
 
 (def ^:private shops
   {:table :shops :columns [[:shop/id :uuid {:primary-key? true}]]
-   :indexes [] :references [] :triggers [] :on-change nil :access :public})
+   :indexes [] :uniques [] :checks [] :references [] :triggers [] :on-change nil :access :public})
 
 (def ^:private orders
   {:table :orders
    :columns [[:order/id :uuid {:primary-key? true :default :random-uuid}]
-             [:order/shop-id :uuid {:references :shop/id}]]
-   :indexes [[:order/shop-id]] :references [] :triggers [] :on-change nil
+             [:order/shop-id :uuid {:references {:to :shop/id :on-delete :refuse :on-update :refuse :checked-at :statement}}]]
+   :indexes [{:columns [[:order/shop-id :ascending :nulls-last]] :method :btree :ops {} :unique? false :where nil}] :uniques [] :checks [] :references [] :triggers [] :on-change nil
    :access [{:allow #{:orders/see :orders/edit} :only :all-of-the-action :to [:member :order/shop-id]}]})
 
 (def ^:private tables [shops orders])
@@ -104,7 +104,7 @@
   (run-sql! owner-pool "DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'doorman_app') THEN CREATE ROLE doorman_app LOGIN; END IF; END $$")
   (let [ready (into (doorman/put-gates-on-tables tables scope-kinds) (conj doorman/access-tables doorman/sessions-table doorman/tokens-table))]
     (doorman/install-access-functions! owner-pool tables scope-kinds)
-    (with-out-str @(:slow-part (cellar/migrate! owner-pool ready [] test-settings/migrate-options)))
+    (with-out-str @(:slow-part (cellar/migrate! owner-pool (test-settings/declare-tables ready) [] test-settings/migrate-options)))
     (cellar/grant-tables-to-role! owner-pool ready "doorman_app"))
   (run-sql! owner-pool (str "INSERT INTO shops VALUES ('" shop-a "'), ('" shop-b "')"))
   (cellar/run-in-transaction! owner-pool {:read-only? false}

@@ -15,7 +15,7 @@
 (def ^:private orders
   {:table   :orders
    :columns [[:order/id :uuid {:primary-key? true}]
-             [:order/shop-id :uuid {:references :shop/id}]
+             [:order/shop-id :uuid {:references {:to :shop/id :on-delete :refuse :on-update :refuse :checked-at :statement}}]
              [:order/customer-id :uuid {:optional? true}]
              [:order/status :string]]
    :access  [{:allow #{:orders/see :orders/edit} :only :all-of-the-action :to [:member :order/shop-id]}
@@ -54,7 +54,7 @@
 (def ^:private workstations
   {:table   :workstations
    :columns [[:workstation/id :uuid {:primary-key? true}]
-             [:workstation/shop-id :uuid {:references :shop/id}]]
+             [:workstation/shop-id :uuid {:references {:to :shop/id :on-delete :refuse :on-update :refuse :checked-at :statement}}]]
    :access  [{:allow :orders/edit :only #{:read} :to [:member :workstation/shop-id]}]})
 
 (deftest only-narrows-a-sentence-to-some-operations
@@ -69,7 +69,7 @@
 
 (deftest the-checks-condition-asks-for-what-the-action-is-for
   (let [ledger     {:table   :ledger
-                    :columns [[:ledger/id :uuid {:primary-key? true}] [:ledger/shop-id :uuid {:references :shop/id}]]
+                    :columns [[:ledger/id :uuid {:primary-key? true}] [:ledger/shop-id :uuid {:references {:to :shop/id :on-delete :refuse :on-update :refuse :checked-at :statement}}]]
                     :access  [{:allow :orders/edit :only #{:read :update} :to [:member :ledger/shop-id]}
                               {:allow :orders/see :only #{:read} :to [:me :ledger/shop-id]}]}
         conditions (doorman/make-sql-conditions [shops orders ledger] scope-kinds)]
@@ -111,7 +111,7 @@
   (let [kinds      (assoc-in scope-kinds [:shop :actions :catalogue/see] #{:read})
         categories {:table   :categories
                     :columns [[:category/id :uuid {:primary-key? true}]
-                              [:category/shop-id :uuid {:optional? true :references :shop/id}]]
+                              [:category/shop-id :uuid {:optional? true :references {:to :shop/id :on-delete :refuse :on-update :refuse :checked-at :statement}}]]
                     :access  [{:allow :catalogue/see :only #{:read} :to :anyone :when [:some :category/shop-id]}]}
         problems   #(try (doorman/make-sql-conditions [shops orders %] kinds) []
                          (catch clojure.lang.ExceptionInfo e (:problems (ex-data e))))]
@@ -136,12 +136,17 @@
         partners   {:table :partners :columns [[:partner/id :uuid {:primary-key? true}]]}
         agreements {:table   :agreements
                     :columns [[:agreement/id :uuid {:primary-key? true}]
-                              [:agreement/shop-id :uuid {:references :shop/id}]
-                              [:agreement/partner-id :uuid {:references :partner/id}]
+                              [:agreement/shop-id :uuid {:references {:to :shop/id :on-delete :refuse :on-update :refuse :checked-at :statement}}]
+                              [:agreement/partner-id :uuid {:references {:to :partner/id :on-delete :refuse :on-update :refuse :checked-at :statement}}]
                               [:agreement/accepted-at :time/instant {:optional? true}]]
-                    :indexes [[:agreement/shop-id] [:agreement/partner-id]]
+                    :indexes [{:columns [[:agreement/shop-id :ascending :nulls-last]]
+                               :method :btree :ops {} :unique? false :where nil}
+                              {:columns [[:agreement/partner-id :ascending :nulls-last]]
+                               :method :btree :ops {} :unique? false :where nil}]
+                    :uniques []
+                    :checks  []
                     :access  :public}
-        orders     (assoc orders :indexes [[:order/shop-id]])
+        orders     (assoc orders :indexes [{:columns [[:order/shop-id :ascending :nulls-last]] :method :btree :ops {} :unique? false :where nil}])
         via        #(assoc orders :access [{:allow :orders/see :only #{:read}
                                             :via {:table :agreements :match {:order/shop-id :agreement/shop-id}
                                                   :to [:member :agreement/partner-id :agreements/see] :when %}}])

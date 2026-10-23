@@ -32,8 +32,8 @@
           the row's: SQL's EXISTS, read by a function doorman installs
           (doorman.via_…), which reads the related table past its gates.
 
-   Who is asking is read from SQL functions doorman installs (see
-   create_access_functions.sql). Each is wrapped in (SELECT …), so Postgres
+   Who is asking is read from doorman's own SQL functions (see
+   sql_functions/, declared to cellar by doorman.api/function-files). Each is wrapped in (SELECT …), so Postgres
    asks once per query, not once per row; the array one is cast back to
    uuid[], or ANY would read it as a subquery of arrays."
   (:require
@@ -57,16 +57,31 @@
   [{:keys [columns]}]
   (vec (keep (fn [[k _ options]] (when (:primary-key? options) k)) columns)))
 
+(defn- find-leading-column-keys
+  "An index's columns, in order, up to its first expression: what a
+   lookup by those columns can use."
+  [{index-columns :columns}]
+  (vec (take-while keyword? (map first index-columns))))
+
 (defn find-indexed-column-lists
-  "The column lists a table has an index on: its :indexes, its primary
-   key, and each :unique? column."
-  [{:keys [indexes columns] :as table}]
-  (concat indexes
+  "The column lists a table has an index on, each in its order: its
+   :indexes that are :btree over every row (:where nil), their columns up
+   to the first expression; its primary key; its :uniques; and each
+   :unique? column."
+  [{:keys [indexes uniques columns] :as table}]
+  (concat (for [{:keys [method where] :as index} indexes
+                :when (and (= :btree method) (nil? where))
+                :let [column-keys (find-leading-column-keys index)]
+                :when (seq column-keys)]
+            column-keys)
           [(find-primary-key-columns table)]
+          uniques
           (for [[k _ options] columns :when (:unique? options)] [k])))
 
 (defn is-indexed?
-  "Whether an index of the table starts with these columns, in any order."
+  "Whether an index of the table (find-indexed-column-lists: a :btree one
+   over every row, the primary key, a unique key) starts with these
+   columns, in any order."
   [table columns]
   (boolean (some #(= (set columns) (set (take (count columns) %))) (find-indexed-column-lists table))))
 
@@ -77,7 +92,7 @@
   "The scope kind a column names, the kind whose :table its reference
    points at (that table's primary key), or nil."
   [{:keys [columns]} column-key tables-by-key scope-kinds]
-  (let [references (some (fn [[k _ options]] (when (= k column-key) (:references options))) columns)
+  (let [references (some (fn [[k _ options]] (when (= k column-key) (get-in options [:references :to]))) columns)
         target     (when references
                      (some (fn [[table-key {table-columns :columns}]]
                              (when (some (fn [[k _ options]] (and (= k references) (:primary-key? options))) table-columns)
@@ -171,18 +186,6 @@
     (:and :or)            (mapcat find-condition-words more)
     (:= :not= :in :none :some) [[word (first more)]]
     [[word nil condition]]))
-
-(def ^:private postgres-types
-  {:uuid "uuid" :int "bigint" :decimal "numeric" :double "double precision" :string "text"
-   :boolean "boolean" :time/instant "timestamp with time zone" :time/local-date "date"})
-
-(defn turn-type-into-postgres-type
-  "A column's type (cellar's words) as Postgres's; an enum is text."
-  [type]
-  (if (and (vector? type) (= :enum (first type)))
-    "text"
-    (or (get postgres-types type)
-        (throw (ex-info (str "No Postgres type for " (pr-str type)) {:type :doorman/unknown-type :column-type type})))))
 
 (defn- find-hash [data] (format "%08x" (bit-and (hash data) 0xffffffff)))
 

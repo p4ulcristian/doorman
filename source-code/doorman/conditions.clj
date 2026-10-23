@@ -42,7 +42,9 @@
 ;; Checking
 
 (defn is-indexed?
-  "Whether an index of the table starts with these columns, in any order."
+  "Whether an index of the table (sentences/find-indexed-column-lists: a :btree one
+   over every row, the primary key, a unique key) starts with these
+   columns, in any order."
   [table columns]
   (sentences/is-indexed? table columns))
 
@@ -186,7 +188,7 @@
                                 :when (contains? scope-tables table)
                                 [k _ options] columns :when (:primary-key? options)]
                             k))]
-    (some (fn [[_ _ options]] (contains? pk-of-scope (:references options))) columns)))
+    (some (fn [[_ _ options]] (contains? pk-of-scope (get-in options [:references :to]))) columns)))
 
 (defn- find-vias
   "Every via of every table's sentences: [{:via … :table row-table-key}]."

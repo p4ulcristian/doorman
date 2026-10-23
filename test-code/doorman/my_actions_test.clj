@@ -27,12 +27,14 @@
            :parent  nil :single? false :denies []}}))
 
 (def ^:private shops
-  {:table :shops :columns [[:shop/id :uuid {:primary-key? true}]] :indexes [] :references [] :triggers [] :gates nil :on-change nil :access :public})
+  {:table :shops :columns [[:shop/id :uuid {:primary-key? true}]] :indexes [] :uniques [] :checks [] :references [] :triggers [] :gates nil :on-change nil :access :public})
 
 (def ^:private orders
   {:table     :orders
-   :columns   [[:order/id :uuid {:primary-key? true}] [:order/shop-id :uuid {:references :shop/id}]]
+   :columns   [[:order/id :uuid {:primary-key? true}] [:order/shop-id :uuid {:references {:to :shop/id :on-delete :refuse :on-update :refuse :checked-at :statement}}]]
    :indexes   []
+   :uniques   []
+   :checks    []
    :references []
    :triggers   []
    :gates     nil
@@ -43,6 +45,8 @@
   {:table     :posts
    :columns   [[:post/id :uuid {:primary-key? true}] [:post/status :string]]
    :indexes   []
+   :uniques   []
+   :checks    []
    :references []
    :triggers   []
    :gates     nil
@@ -54,6 +58,8 @@
   {:table     :profiles
    :columns   [[:profile/id :uuid {:primary-key? true}] [:profile/person-id :uuid]]
    :indexes   []
+   :uniques   []
+   :checks    []
    :references []
    :triggers   []
    :gates     nil
@@ -119,7 +125,7 @@
           ask      #(ask-as handlers %1 %2)]
       (try
         (run-sql! pool "DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public; DROP SCHEMA IF EXISTS doorman CASCADE; DROP SCHEMA IF EXISTS cellar CASCADE")
-        (with-out-str @(:slow-part (cellar/migrate! pool (into [shops doorman/sessions-table doorman/tokens-table] doorman/access-tables) [] test-settings/migrate-options)))
+        (with-out-str @(:slow-part (cellar/migrate! pool (test-settings/declare-tables (into [shops doorman/sessions-table doorman/tokens-table] doorman/access-tables)) [] test-settings/migrate-options)))
         (cellar/run-in-transaction! pool {:read-only? false}
           (fn [transaction]
             (doorman/add-scope! transaction scope-kinds :shop shop-9 paul nil)

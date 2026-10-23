@@ -4,6 +4,7 @@
    own: with a log and a meter of its own."
   (:require
    [cellar.api :as cellar]
+   [doorman.api :as doorman]
    [logbook.api :as logbook]
    [meter.api :as meter]))
 
@@ -35,6 +36,12 @@
    :metric-buckets                 {:query-seconds              [0.01 0.1 1]
                                     :connection-acquire-seconds [0.01 0.1 1]
                                     :connection-usage-seconds   [0.01 0.1 1]}})
+
+(defn declare-tables
+  "What the tests declare to cellar beside the tables: doorman's own
+   functions, no extensions or views."
+  [tables]
+  {:tables tables :extensions [] :functions doorman/function-files :views []})
 
 (def migrate-options
   {:instant-part {:statement-timeout-ms 10000 :lock-timeout-ms 5000}
