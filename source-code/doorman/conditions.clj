@@ -1,6 +1,7 @@
 (ns doorman.conditions
   "Every table's sentences checked, then turned into SQL conditions: one per
-   action (the check's, every sentence of it), and one per operation (read,
+   action (the check's: its sentences whose :only allows what the action
+   is for, its writes or else :read), and one per operation (read,
    insert, update, delete) for the gates, joining the actions that do that
    operation, each by its sentences whose :only allows it on this table.
 
@@ -277,11 +278,17 @@
 
 (defn turn-deny-into-sql
   "A deny's NOT for a row of the table, or nil when it can't say no there
-   (a state deny on a table with no column naming its kind)."
+   (a state deny on a table with no column naming its kind). A state deny
+   holds for a row whose columns name a scope in the state, the scope's
+   own row on the kind's table among them."
   [{:keys [kind session] :as deny} table {:keys [tables-by-key scope-kinds]}]
   (if session
     (str "NOT (SELECT doorman.has_session_flag(" (sentences/quote-text (name session)) "))")
-    (when-let [columns (seq (sentences/find-columns-naming-kind table kind tables-by-key scope-kinds))]
+    (when-let [columns (seq (distinct (concat (sentences/find-columns-naming-kind table kind tables-by-key scope-kinds)
+                                              ;; the scope's own row (the shop in shops) is frozen too
+                                              (for [column (sentences/find-primary-key-columns table)
+                                                    :when (= kind (sentences/find-kind-of-own-row table column scope-kinds))]
+                                                column))))]
       (str/join " AND " (for [column columns
                               :let [c (sentences/column-name column)]]
                           (str "(" c " IS NULL OR " c " NOT IN (SELECT " (find-denied-function-name deny) "()))"))))))
@@ -356,6 +363,14 @@
   (when (seq sentences)
     (str/join " OR " (map #(sentences/turn-sentence-into-sql % action place) sentences))))
 
+(defn check-operations
+  "The operations the check asks a sentence's :only for, of what an
+   action does: its writes, for an action that writes (a sentence letting
+   it only read there doesn't let it act); else :read."
+  [does]
+  (let [writes (filter scope-kinds/writing-operations does)]
+    (if (seq writes) (set writes) #{:read})))
+
 (defn- make-conditions-of-table [table place actions-do tables]
   (let [place        (assoc place :table table)
         actions      (set (mapcat sentences/find-allowed-actions (:access table)))
@@ -364,9 +379,11 @@
         ;; sentences stand beside them. A person's sentences count only for
         ;; the action the handler acts as (doorman.is_acting), so another
         ;; action held in the same scope opens nothing. In an operation, only
-        ;; the sentences whose :only allows it (op nil, the check's: every one).
+        ;; the sentences whose :only allows it; for the check (op nil), those
+        ;; allowing what the action is for (check-operations).
         condition-of (fn [action op]
-                       (let [all    (filter #(sentences/does-sentence-allow-operation? % op)
+                       (let [ops    (if op #{op} (check-operations (get actions-do action)))
+                             all    (filter (fn [sentence] (some #(sentences/does-sentence-allow-operation? sentence %) ops))
                                             (sentences/find-sentences-of-action table action))
                              people (join-sentences-with-or (remove sentences/is-system-sentence? all) action place)
                              system (join-sentences-with-or (filter sentences/is-system-sentence? all) action place)]

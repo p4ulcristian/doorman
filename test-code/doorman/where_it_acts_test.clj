@@ -23,20 +23,27 @@
 
 (def ^:private scope-kinds
   (doorman/check-scope-kinds
-   {:shop {:table :shops :parent nil :single? false :denies []
-           :actions {:machines/edit     #{:read :insert :update}
+   {:shop {:table :shops :parent nil :single? false
+           :denies  [{:deny :writes :when [:= :shop/status "suspended"]}]
+           :actions {:billing/mark      #{:read :update}                ; a named system actor's, on shops
+                     :machines/edit     #{:read :insert :update}
                      :workstations/edit #{:read :insert :update}
                      :orders/edit       #{:read :insert :update :delete}
                      :payouts/edit      #{:read :insert :update :delete}
                      :shops/edit        #{:read :update}}
            :roles   {"Mechanic"    #{:machines/edit}
                      "Employee"    #{:workstations/edit}
-                     "Order clerk" #{:orders/edit}}}}))
+                     "Order clerk" #{:orders/edit}}}
+    :platform {:table nil :parent nil :single? true :denies []
+               :actions {:shops/lift #{:read :update}}
+               :roles   {"Support" #{:shops/lift}}}}))
 
 (def ^:private shops
-  {:table :shops :columns [[:shop/id :uuid {:primary-key? true}] [:shop/name :string]]
+  {:table :shops :columns [[:shop/id :uuid {:primary-key? true}] [:shop/name :string] [:shop/status :string]]
    :indexes [] :references [] :triggers [] :on-change nil
-   :access [{:allow :shops/edit :only :all-of-the-action :to [:member :shop/id]}]})   ; the scope's own row
+   :access [{:allow :shops/edit :only :all-of-the-action :to [:member :shop/id]}              ; the scope's own row
+            {:allow :shops/lift :only :all-of-the-action :to [:member :platform :shops/lift]}  ; the app's staff
+            {:allow :billing/mark :only :all-of-the-action :to [:system :billing]}]})
 
 (def ^:private machines
   {:table :machines
@@ -78,6 +85,9 @@
 
 (def ^:private shop-a (id 1001))
 (def ^:private shop-b (id 2002))
+(def ^:private shop-c (id 3003))   ; suspended, Paul's
+(def ^:private platform (id 9009))
+(def ^:private sam  (id 4))   ; Support in the platform
 (def ^:private paul (id 1))   ; Owner of both shops
 (def ^:private anna (id 2))   ; Mechanic in A, Employee in B
 (def ^:private bob  (id 3))   ; Order clerk in A
@@ -85,6 +95,7 @@
 (def ^:private order-b (id 22))
 (def ^:private ledger-a (id 111))
 (def ^:private station-a (id 1111))
+(def ^:private station-b (id 2222))
 
 (def ^:private settings {:cookie-name "app_session" :session-days 1 :visitor-session-days 1 :renew-after-minutes 60
                          :allowed-origin "http://app.test" :secure-cookie? false})
@@ -127,6 +138,18 @@
                        :params-shape [:map [:shop/id :uuid]] :answer-shape [:map [:shop/id :uuid]]
                        :rate-limit nil :run-steps-in nil
                        :steps [(answer-with (fn [_ data] (select-keys data [:shop/id])))]}
+   :stations/rename   {:action :orders/edit :record [:workstations :workstation/id]   ; :only #{:read} there
+                       :params-shape [:map [:workstation/id :uuid]] :answer-shape [:map]
+                       :rate-limit nil :run-steps-in nil
+                       :steps [(answer-with (fn [_ _] {}))]}
+   :ledger/one        {:action :orders/edit :record [:ledger-entries :ledger-entry/id]  ; :only #{:read :insert :update} there
+                       :params-shape [:map [:ledger-entry/id :uuid]] :answer-shape [:map]
+                       :rate-limit nil :run-steps-in nil
+                       :steps [(answer-with (fn [_ _] {}))]}
+   :shops/lift        {:action :shops/lift :record [:shops :shop/id]
+                       :params-shape [:map [:shop/id :uuid]] :answer-shape [:map [:count :int]]
+                       :rate-limit nil :run-steps-in nil
+                       :steps [(answer-with (fn [t data] {:count (cellar/run-statement! t (query "UPDATE shops SET shop__status = 'open' WHERE shop__id = :shop/id") data)}))]}
    :orders/work       {:action :orders/edit :record [:orders :order/id]
                        :params-shape [:map [:order/id :uuid] [:target/shop-id :uuid] [:work (into [:enum] (sort (keys bob-does)))]]
                        :answer-shape [:map [:count :int]]
@@ -175,14 +198,18 @@
     (doorman/install-access-functions! owner-pool tables scope-kinds)
     (with-out-str @(:slow-part (cellar/migrate! owner-pool ready [] test-settings/migrate-options)))
     (cellar/grant-tables-to-role! owner-pool ready "doorman_app"))
-  (run-sql! owner-pool (str "INSERT INTO shops VALUES ('" shop-a "', 'A'), ('" shop-b "', 'B')"))
+  (run-sql! owner-pool (str "INSERT INTO shops VALUES ('" shop-a "', 'A', 'open'), ('" shop-b "', 'B', 'open'), ('" shop-c "', 'C', 'suspended')"))
   (run-sql! owner-pool (str "INSERT INTO orders VALUES ('" order-a "', '" shop-a "'), ('" order-b "', '" shop-b "')"))
   (run-sql! owner-pool (str "INSERT INTO ledger_entries VALUES ('" ledger-a "', '" shop-a "', '" order-a "', 10)"))
-  (run-sql! owner-pool (str "INSERT INTO workstations VALUES ('" station-a "', '" shop-a "', 'oven')"))
+  (run-sql! owner-pool (str "INSERT INTO workstations VALUES ('" station-a "', '" shop-a "', 'oven'), ('" station-b "', '" shop-b "', 'booth')"))
   (cellar/run-in-transaction! owner-pool {:read-only? false}
                               (fn [transaction]
                                 (doorman/add-scope! transaction scope-kinds :shop shop-a paul nil)
                                 (doorman/add-scope! transaction scope-kinds :shop shop-b paul nil)
+                                (doorman/add-scope! transaction scope-kinds :shop shop-c paul nil)
+                                (doorman/add-scope! transaction scope-kinds :platform platform sam nil)
+                                (doorman/remove-membership! transaction [:platform platform] sam)
+                                (doorman/add-membership! transaction [:platform platform] sam "Support")
                                 (doorman/add-membership! transaction [:shop shop-a] anna "Mechanic")
                                 (doorman/add-membership! transaction [:shop shop-b] anna "Employee")
                                 (doorman/add-membership! transaction [:shop shop-a] bob "Order clerk"))))
@@ -226,7 +253,7 @@
 
           (testing "a sentence on the scope's own row"
             (is (= {:count 1} (ask paul :shops/rename {:shop/id shop-a})) "the Owner renames A, and only A")
-            (is (= ["renamed" "B"] (map :shop/name (cellar/find-rows owner-pool (query "SELECT shop__name FROM shops ORDER BY shop__name DESC") {}))))
+            (is (= ["renamed" "C" "B"] (map :shop/name (cellar/find-rows owner-pool (query "SELECT shop__name FROM shops ORDER BY shop__name DESC") {}))))
             (is (= {:error "Not found."} (ask anna :shops/rename {:shop/id shop-a})) "Anna doesn't hold :shops/edit")
             (is (= {:shop/id (str shop-b)} (ask paul :shops/one {:shop/id shop-b})))
             (is (= {:error "Not found."} (ask bob :shops/one {:shop/id shop-a}))))
@@ -239,12 +266,34 @@
               (is (= 2 (count-rows owner-pool "SELECT 1 AS row__found FROM ledger_entries")))
               (is (= {:count 1} (work "read-workstations")) "workstations read")
               (is (= {:count 0} (work "update-workstation")) "and only read")
-              (is (= ["oven"] (map :workstation/name (cellar/find-rows owner-pool (query "SELECT workstation__name FROM workstations") {})))))
+              (is (= #{"oven" "booth"} (set (map :workstation/name (cellar/find-rows owner-pool (query "SELECT workstation__name FROM workstations") {}))))))
             (is (= {:error "Something went wrong."} (ask bob :orders/work {:order/id order-a :target/shop-id shop-b :work "insert-ledger"}))
                 "a ledger row in shop B, from shop A's order: refused by the gate")
             (is (= {:error "Not found."} (ask bob :orders/work {:order/id order-b :target/shop-id shop-b :work "insert-ledger"}))
                 "shop B's order: refused by the check")
             (is (= 2 (count-rows owner-pool "SELECT 1 AS row__found FROM ledger_entries"))))
+
+          (testing "the check respects :only: a record the action only reads there is not allowed, one it doesn't reach not found"
+            (is (= {:error "Not allowed."} (ask bob :stations/rename {:workstation/id station-a}))
+                ":orders/edit reads shop A's workstations, never writes them")
+            (is (= {:error "Not found."} (ask bob :stations/rename {:workstation/id station-b})) "shop B's: no sentence reaches it")
+            (is (= {} (ask bob :ledger/one {:ledger-entry/id ledger-a})) "the ledger: :only lets it write there"))
+
+          (testing "a suspended shop's own row is frozen for its own kind's actions"
+            (let [shop-c-row #(first (cellar/find-rows owner-pool (query (str "SELECT shop__name, shop__status FROM shops WHERE shop__id = '" shop-c "'")) {}))
+                  as-paul    #(doorman/run-as-asker! app-pool {:person-id paul :visitor-id nil :session-flags #{}}
+                                                     {:read-only? false :scope-kinds scope-kinds} %)]
+              (is (= {:error "Not allowed."} (ask paul :shops/rename {:shop/id shop-c})) "the check: the Owner can't change its settings")
+              (is (= 0 (as-paul #(cellar/run-statement! % (query (str "UPDATE shops SET shop__status = 'open' WHERE shop__id = '" shop-c "'")) {})))
+                  "the gate: nor lift the suspension")
+              (is (= 1 (as-paul #(count (cellar/find-rows % (query (str "SELECT shop__id FROM shops WHERE shop__id = '" shop-c "'")) {}))))
+                  "it still reads")
+              (is (= 1 (doorman/run-as-system! app-pool :billing {:read-only? false}
+                                               #(cellar/run-statement! % (query (str "UPDATE shops SET shop__name = 'billed' WHERE shop__id = '" shop-c "'")) {})))
+                  "a named system actor writes it: the denies hold people")
+              (is (= {:count 1} (ask sam :shops/lift {:shop/id shop-c})) "the platform's Support lifts it, by an action of another kind")
+              (is (= {:shop/name "billed" :shop/status "open"} (shop-c-row)))
+              (is (= {:count 1} (ask paul :shops/rename {:shop/id shop-c})) "lifted, the Owner writes it again")))
 
           (testing "explain-refusal names the scope and that the action isn't held there"
             (let [answer (doorman/explain-refusal {:pool app-pool :handlers handlers :tables tables :scope-kinds scope-kinds}

@@ -1,5 +1,7 @@
 # A session flag and a scope's state may say no, on the kind whose actions they deny
 
+> **Changed in part** by [A suspended scope's own row is frozen for its own kind's actions](2026-10-23-a-suspended-scopes-own-row-is-frozen-for-its-own-kinds-actions.md) (2026-10-23, built on tidy-up, not released): a state deny holds on the scope's own row too (the shop in `shops`), for the kind's own actions; the state is lifted by another kind's action or a named system actor.
+
 > Since v0.7.0. Builds the deny of [Access rules are sentences in doorman's language](2026-10-17-access-rules-are-sentences-in-doormans-language.md) and its "Settled while building".
 
 **Decision:** a kind of scope writes out `:denies`, `[]` for none. A deny is about the kind's own actions: `{:deny #{:money/move}}` (a set, or one action) or `{:deny :writes}` (every action of the kind that inserts, updates or deletes); naming another kind's action is refused at the start. It says no by one of two things, never a person or a row:

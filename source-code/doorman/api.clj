@@ -255,7 +255,9 @@
      {:orders {:actions    {:orders/see \"…\" :orders/edit \"…\"}
                :operations {:read \"…\" :insert \"…\" :update \"…\" :delete \"…\"}}}
 
-   The check uses an action's condition, every sentence of it; the gates
+   The check uses an action's condition: its sentences whose :only allows
+   what the action is for (its writes, for an action that writes; else
+   :read), so a record the action only reads there is \"Not allowed.\"; the gates
    use an operation's, each action by the sentences whose :only allows that
    operation on the table, and each person's sentence only while its action
    is the one acted as (doorman.is_acting)."

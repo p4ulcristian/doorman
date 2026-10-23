@@ -46,12 +46,6 @@
              :when kind]
          {:column column :scope-kind kind :scope-id (get row column)})))
 
-(defn- find-denied-row-scopes
-  "The row's scopes a state deny holds for: those its columns reference,
-   not the scope's own row, which the app changes to lift the state."
-  [table row-scopes {:keys [tables-by-key scope-kinds]}]
-  (filterv #(sentences/find-kind-named-by-column table (:column %) tables-by-key scope-kinds) row-scopes))
-
 (defn- explain-to
   "What a :to word says of the row, and whether it holds."
   [to action table row actions-by-scope {:keys [tables-by-key scope-kinds]} holds?]
@@ -136,7 +130,7 @@
                                 (sentences/find-sentences-of-action table action))
                           [])
      :denies            (explain-denies transaction scope-kinds action (:session-flags asker)
-                                        (if row-scopes (find-denied-row-scopes table row-scopes place) []))}))
+                                        (or row-scopes []))}))
 
 (defn- explain-named-scope
   "For a :scope [kind param] handler: the scope the param names, whether

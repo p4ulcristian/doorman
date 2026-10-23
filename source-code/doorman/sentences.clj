@@ -221,10 +221,9 @@
 
 (defn does-sentence-allow-operation?
   "Whether a sentence's :only lets its actions do the operation on its
-   table: :all-of-the-action, or the operation in its set. op nil (the
-   check's question, the action at all): every sentence."
+   table: :all-of-the-action, or the operation in its set."
   [{:keys [only]} op]
-  (or (nil? op) (= :all-of-the-action only) (contains? only op)))
+  (or (= :all-of-the-action only) (contains? only op)))
 
 (defn find-sentences-of-action
   "The sentences of a table that allow an action."

@@ -64,8 +64,21 @@
            (get-in conditions [:workstations :operations :read])))
     (is (= "false" (get-in conditions [:workstations :operations :update])) ":only #{:read}: no update on this table")
     (is (= "false" (get-in conditions [:workstations :operations :insert])))
-    (is (= (acting "orders/edit" (str "(" edits ")")) (get-in conditions [:workstations :actions :orders/edit]))
-        "the check's condition: every sentence of the action")))
+    (is (= "false" (get-in conditions [:workstations :actions :orders/edit]))
+        "the check's condition: orders/edit writes, and no sentence lets it write here")))
+
+(deftest the-checks-condition-asks-for-what-the-action-is-for
+  (let [ledger     {:table   :ledger
+                    :columns [[:ledger/id :uuid {:primary-key? true}] [:ledger/shop-id :uuid {:references :shop/id}]]
+                    :access  [{:allow :orders/edit :only #{:read :update} :to [:member :ledger/shop-id]}
+                              {:allow :orders/see :only #{:read} :to [:me :ledger/shop-id]}]}
+        conditions (doorman/make-sql-conditions [shops orders ledger] scope-kinds)]
+    (is (= (acting "orders/edit" "(ledger__shop_id = ANY ((SELECT doorman.find_scopes_holding('shop', 'orders/edit'))::uuid[]))")
+           (get-in conditions [:ledger :actions :orders/edit]))
+        "one of its writes is allowed here: it acts")
+    (is (= (acting "orders/see" "(ledger__shop_id = (SELECT doorman.find_asking_person()))")
+           (get-in conditions [:ledger :actions :orders/see]))
+        "an action that only reads: a sentence allowing :read")))
 
 (deftest a-sentence-writes-out-only
   (let [problems #(try (doorman/make-sql-conditions [shops (assoc orders :access %)] scope-kinds) []
