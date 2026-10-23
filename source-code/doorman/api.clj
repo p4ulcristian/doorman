@@ -401,9 +401,7 @@
   (let [{:keys [tables scope-kinds] :as options} (settings/check-access-options options)]
     (check/put-access-into-handlers
      handlers
-     (assoc options
-            :conditions   (conditions/make-sql-conditions tables scope-kinds)
-            :list-actions #(memberships/list-actions-of-person %1 scope-kinds %2)))))
+     (assoc options :conditions (conditions/make-sql-conditions tables scope-kinds)))))
 
 (defn put-gates-on-tables
   "The table maps, each with sentences given :gates (its :operations

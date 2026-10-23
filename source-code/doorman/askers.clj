@@ -16,7 +16,6 @@
    [cellar.api :as cellar]
    [doorman.asking :as asking]
    [doorman.cookie :as cookie]
-   [doorman.memberships :as memberships]
    [doorman.origin :as origin]
    [doorman.sessions :as sessions]
    [doorman.settings :as settings]
@@ -106,12 +105,10 @@
   (when (cellar/is-transaction? pool)
     (throw (ex-info "run-as-asker-of-request! runs in a transaction of its own: hand it the pool"
                     {:type :doorman/asker-in-a-transaction})))
-  (let [{{:keys [person-id] :as asker} :asker} (find-asker-or-throw pool request settings)]
+  (let [{:keys [asker]} (find-asker-or-throw pool request settings)]
     (cellar/run-in-transaction! pool {:read-only? read-only?}
                                 (fn [transaction]
-                                  (asking/set-asking! transaction asker
-                                                      {:acting  :every-action
-                                                       :holding (if person-id (memberships/list-actions-of-person transaction scope-kinds person-id) {})})
+                                  (asking/set-asking-with-every-action! transaction scope-kinds asker)
                                   (f transaction)))))
 
 (defn make-token! [pool request {:keys [settings] :as options}]

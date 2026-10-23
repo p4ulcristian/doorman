@@ -171,7 +171,7 @@
             (is (= "{\"orders/sneak\":{\"error\":\"Something went wrong.\"}}"
                    (ask (:port server) (cookie anna) (str "{\"orders/sneak\":{\"order/shop-id\":\"" shop-7 "\"}}")))
                 "Anna may edit shop 7's orders, but orders/see only reads"))
-          (testing "run-as-asker-of-request!: a transaction as the request's asker, off a message, held by the same gates"
+          (testing "run-as-asker-of-request!: a transaction as the request's asker, outside a message, held by the same gates"
             (let [as (fn [request read-only? f]
                        (doorman/run-as-asker-of-request! app-pool request {:settings settings :read-only? read-only? :scope-kinds scope-kinds} f))
                   anna-request {:request-method :get :headers {"cookie" (cookie anna)}}]

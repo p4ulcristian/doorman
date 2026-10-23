@@ -32,7 +32,6 @@
    [cellar.api :as cellar]
    [doorman.asking :as asking]
    [doorman.conditions :as conditions]
-   [doorman.memberships :as memberships]
    [doorman.scope-kinds :as scope-kinds]
    [doorman.shapes :as shapes]
    [doorman.sentences :as sentences]
@@ -132,10 +131,8 @@
         state-denies (filter :when (scope-kinds/find-denies scope-kinds))]
     {:name  :doorman/answer-my-actions
      :enter (fn [{:doorman/keys [person-id visitor-id session-flags transaction] :as context}]
-              (let [held     (if person-id (memberships/list-actions-of-person transaction scope-kinds person-id) {})
-                    _        (asking/set-asking! transaction {:person-id person-id :visitor-id visitor-id
-                                                              :session-flags session-flags}
-                                                     {:acting :every-action :holding held})
+              (let [held     (asking/set-asking-with-every-action! transaction scope-kinds
+                                                                       {:person-id person-id :visitor-id visitor-id :session-flags session-flags})
                     by-scope (-> (add-held-for held held-for)
                                  (as-> by-scope
                                        (reduce (fn [by-scope {:keys [action kind] :as via}]

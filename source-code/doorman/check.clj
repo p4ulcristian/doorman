@@ -266,7 +266,7 @@
   [{:keys [scope-kinds]} action]
   (scope-kinds/does-action-only-read? scope-kinds action))
 
-(defn- make-run-steps-in [{:keys [pool find-session-step list-actions] :as setup} {:keys [action]}]
+(defn- make-run-steps-in [{:keys [pool find-session-step scope-kinds] :as setup} {:keys [action]}]
   (fn [run context]
     (let [context (bridge/run-steps-until-answered [find-session-step] context)]
       (if (bridge/does-context-have-answer? context)
@@ -274,10 +274,9 @@
         (cellar/run-in-transaction! pool {:read-only? (does-action-only-read? setup action)}
                                     (fn [transaction]
                                       (let [{:doorman/keys [person-id visitor-id session-flags]} context
-                                            actions (if person-id (list-actions transaction person-id) {})]
-                                        ;; the check reads with every action; it then tells only the handler's
-                                        (asking/set-asking! transaction {:person-id person-id :visitor-id visitor-id :session-flags session-flags}
-                                                            {:acting :every-action :holding actions})
+                                            ;; the check reads with every action; it then tells only the handler's
+                                            actions (asking/set-asking-with-every-action! transaction scope-kinds
+                                                                                          {:person-id person-id :visitor-id visitor-id :session-flags session-flags})]
                                         (run (assoc context
                                                     :doorman/transaction transaction
                                                     :doorman/actions actions)))))))))
@@ -285,7 +284,7 @@
 (defn put-access-into-handlers
   "Every handler checked, then given the check in front of its steps and the
    running of them in a transaction that knows who is asking. setup:
-   {:pool :tables :scope-kinds :find-session-step :conditions :list-actions}."
+   {:pool :tables :scope-kinds :find-session-step :conditions}."
   [handlers {:keys [tables scope-kinds] :as setup}]
   (check-handlers handlers setup)
   (let [setup (assoc setup :needs (acting/find-needs tables scope-kinds))]

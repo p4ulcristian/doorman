@@ -61,9 +61,10 @@
    [:session-flags flags-shape]])
 
 (def asker-shape
-  "Who explain-refusal explains for, and doorman.repl's step asks as, every
-   key required: the session's person, its visitor (for nobody signed in)
-   and its flags."
+  "An asker handed in: who explain-refusal explains for, and who
+   doorman.repl's step asks as. Every key required: the person (nil for
+   nobody signed in), the visitor (for nobody signed in; nil for none)
+   and the session's flags (#{} for none)."
   [:map {:closed true}
    [:person-id [:maybe :uuid]]
    [:visitor-id [:maybe :uuid]]

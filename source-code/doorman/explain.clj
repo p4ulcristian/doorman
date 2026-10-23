@@ -183,10 +183,7 @@
       (let [conditions (conditions/make-sql-conditions tables scope-kinds)]
         (cellar/run-in-transaction! pool {:read-only? true}
                                     (fn [transaction]
-                                      (let [actions-by-scope (if (:person-id asker)
-                                                               (memberships/list-actions-of-person transaction scope-kinds (:person-id asker))
-                                                               {})]
-                                        (asking/set-asking! transaction asker {:acting :every-action :holding actions-by-scope})
+                                      (let [actions-by-scope (asking/set-asking-with-every-action! transaction scope-kinds asker)]
                                         (asking/set-passing! transaction)
                                         (merge {:handler handler-name
                                                 :action  action

@@ -47,7 +47,7 @@ step's lines say who asked
 | who | `start-visitor-session!` | a session for a visitor, on the app's own route: its id, which the rows kept for them name, and the Set-Cookie text |
 | who | `delete-ended-sessions!` | forgets ended sessions; for a nightly background job |
 | who | `make-find-session-step` | the step first in a handler: who asks, by a bearer token (no Origin check; no session flags) or the session cookie (the Origin checked), both refused; `:doorman/person-id`, `:doorman/visitor-id` and `:doorman/session-flags` in the context, the person (and token) or visitor in `:bridge/log` |
-| who | `run-as-asker-of-request!` | `(f transaction)` as the asker doorman finds in a request, by the step's rules, off a message (the app's own route, a page): held by the gates as a message's steps are |
+| who | `run-as-asker-of-request!` | `(f transaction)` as the asker doorman finds in a request, by the step's rules, outside a message (the app's own route, a page): held by the gates as a message's steps are |
 | who | `find-session-key-of-request` | a hash of the request's token, else its session cookie, for rate limits |
 | what | `access-tables` | its tables, `doorman.scopes` `doorman.roles` `doorman.role_actions` `doorman.memberships` |
 | what | `check-scope-kinds` | the app's kinds of scope, checked, every key written out |

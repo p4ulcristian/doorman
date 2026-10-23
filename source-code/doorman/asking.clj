@@ -4,6 +4,7 @@
    create_access_functions.sql)."
   (:require
    [cellar.api :as cellar]
+   [doorman.memberships :as memberships]
    [jsonista.core :as json]
    [malli.core :as malli]
    [malli.error :as malli-error]))
@@ -57,6 +58,15 @@
    again in the same transaction, the later telling holds."
   [transaction asker telling]
   (cellar/find-one-row transaction set-asking {:asking (turn-asker-into-text asker telling)}))
+
+(defn set-asking-with-every-action!
+  "Lists the person's actions (none for a visitor or nobody) and tells
+   Postgres, for this transaction, that the asker is asking with every
+   action, holding them. Returns the actions, by scope."
+  [transaction scope-kinds {:keys [person-id] :as asker}]
+  (let [actions (if person-id (memberships/list-actions-of-person transaction scope-kinds person-id) {})]
+    (set-asking! transaction asker {:acting :every-action :holding actions})
+    actions))
 
 (defn set-moving!
   "Tells Postgres, for this transaction, that sign-in moves a visitor's
