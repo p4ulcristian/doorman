@@ -28,14 +28,14 @@
    [doorman.asking :as asking]
    [doorman.scope-kinds :as scope-kinds]
    [doorman.sentences :as sentences]
-   [mailroom.api :as mailroom]))
+   [bridge.api :as bridge]))
 
 (def ^:private not-found {:error "Not found."})
 
 (def ^:private not-allowed {:error "Not allowed."})
 
 (defn- find-problems-of-handler
-  "Doorman's own keys, and mailroom's written out: :steps, :rate-limit
+  "Doorman's own keys, and bridge's written out: :steps, :rate-limit
    (nil for none) and :run-steps-in, nil, since doorman runs the steps in
    its transaction and an app's own would be replaced unseen. Both shapes
    must be real ones: the leak test makes params from :params-shape, and
@@ -106,7 +106,7 @@
   "{:allowed bool :visible bool} for the record the message names."
   [query record context]
   (cellar/find-one-row (:doorman/transaction context) query
-                       {:record/id (get-in context [:mailroom/message-data (second record)])}))
+                       {:record/id (get-in context [:bridge/message-data (second record)])}))
 
 (defn- make-check-step [{:keys [tables scope-kinds] :as setup} {:keys [record action] :as handler}]
   (let [query (when record (make-record-query setup handler))
@@ -116,12 +116,12 @@
               (if query
                 (let [{:keys [allowed visible]} (find-reach-of-record query record context)]
                   (cond allowed context
-                        visible (mailroom/add-answer-to-context context not-allowed)
-                        :else   (mailroom/add-answer-to-context context not-found)))
+                        visible (bridge/add-answer-to-context context not-allowed)
+                        :else   (bridge/add-answer-to-context context not-found)))
                 (cond (not (may-person-have-action? ways context))
-                      (mailroom/add-answer-to-context context not-found)
+                      (bridge/add-answer-to-context context not-found)
                       (find-flag-deny scope-kinds action (:doorman/session-flags context))
-                      (mailroom/add-answer-to-context context not-allowed)
+                      (bridge/add-answer-to-context context not-allowed)
                       :else context)))}))
 
 (defn- does-action-only-read?
@@ -132,8 +132,8 @@
 
 (defn- make-run-steps-in [{:keys [pool find-session-step list-actions] :as setup} {:keys [action]}]
   (fn [run context]
-    (let [context (mailroom/run-steps-until-answered [find-session-step] context)]
-      (if (mailroom/does-context-have-answer? context)
+    (let [context (bridge/run-steps-until-answered [find-session-step] context)]
+      (if (bridge/does-context-have-answer? context)
         context
         (cellar/run-in-transaction! pool {:read-only? (does-action-only-read? setup action)}
                                     (fn [transaction]

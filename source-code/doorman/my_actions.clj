@@ -36,7 +36,7 @@
    [doorman.scope-kinds :as scope-kinds]
    [doorman.shapes :as shapes]
    [doorman.sentences :as sentences]
-   [mailroom.api :as mailroom]))
+   [bridge.api :as bridge]))
 
 (def answer-shape
   "The answer, doorman.shapes's, the same on both sides."
@@ -149,22 +149,22 @@
                                                                         action)))
                     denied   (for [deny state-denies] [deny (find-denied-scopes transaction deny)])
                     [by-scope open-now] (take-out-denied by-scope open-now scope-kinds session-flags denied)]
-                (mailroom/add-answer-to-context context (make-answer by-scope open-now))))}))
+                (bridge/add-answer-to-context context (make-answer by-scope open-now))))}))
 
 (defn- make-run-steps-in
   "The session step, then the steps in one read-only transaction at
    :doorman/transaction."
   [{:keys [pool find-session-step]}]
   (fn [run context]
-    (let [context (mailroom/run-steps-until-answered [find-session-step] context)]
-      (if (mailroom/does-context-have-answer? context)
+    (let [context (bridge/run-steps-until-answered [find-session-step] context)]
+      (if (bridge/does-context-have-answer? context)
         context
         (cellar/run-in-transaction! pool {:read-only? true}
                                     (fn [transaction]
                                       (run (assoc context :doorman/transaction transaction))))))))
 
 (defn make-my-actions-handler
-  "The handler, mailroom's keys written out; the options checked already."
+  "The handler, bridge's keys written out; the options checked already."
   [{:keys [tables scope-kinds rate-limit] :as options}]
   (conditions/check-sentences tables scope-kinds)
   {:params-shape [:map {:closed true}]

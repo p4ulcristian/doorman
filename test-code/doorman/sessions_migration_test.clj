@@ -15,7 +15,7 @@
    [doorman.cookie :as cookie]
    [doorman.test-log :as test-log]
    [doorman.test-settings :as test-settings]
-   [mailroom.api :as mailroom]))
+   [bridge.api :as bridge]))
 
 (def ^:private port test-settings/port)
 
@@ -93,7 +93,7 @@
 
 (defn- find-asker [step cookie-value]
   ((juxt :doorman/person-id :doorman/visitor-id :doorman/session-flags)
-   (mailroom/run-steps-until-answered [step] {:mailroom/request (make-request cookie-value) :mailroom/log test-log/log})))
+   (bridge/run-steps-until-answered [step] {:bridge/request (make-request cookie-value) :bridge/log test-log/log})))
 
 (defn- write-session-of-v0-6!
   "A person's session as v0.6.x's sign-in! wrote it: the cookie's

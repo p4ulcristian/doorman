@@ -52,3 +52,4 @@ The ones dated before 2026-10-22, sessions v1 and the five access pieces were ma
 - [A handler writes out mailroom's keys, and its :run-steps-in is nil](2026-10-22-a-handler-writes-out-mailrooms-keys.md)
 - [The app passes its wire; doorman never makes one](2026-10-22-the-app-passes-its-wire.md), changed in part by [The session step adds the person to the message's log](2026-10-22-the-session-step-adds-the-person-to-the-log.md)
 - [The session step adds the person to the message's log; the leak test takes the app's log](2026-10-22-the-session-step-adds-the-person-to-the-log.md)
+- [A websocket is told by its Upgrade header](2026-10-23-a-websocket-is-told-by-its-upgrade-header.md)

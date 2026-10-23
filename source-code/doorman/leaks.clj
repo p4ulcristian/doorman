@@ -7,10 +7,10 @@
    must hold none of the foreign ids. The other params come from the
    handler's :params-shape, by malli's generator, with the options' :seed
    (the same params every run) and :size (how big the made-up values get).
-   Each message is answered by mailroom's answer-message, by the options'
+   Each message is answered by bridge's answer-message, by the options'
    :wire and :log."
   (:require
-   [mailroom.api :as mailroom]
+   [bridge.api :as bridge]
    [malli.generator :as generator]))
 
 (defn- generate-params [{:keys [params-shape]} {:keys [seed size]}]
@@ -23,7 +23,7 @@
   (set (map str (filter #(or (uuid? %) (string? %)) (tree-seq coll? seq data)))))
 
 (defn- ask [handlers request handler-name params {:keys [wire log]}]
-  (get (mailroom/answer-message handlers :no-rate-limits request {handler-name params} {:wire wire :log log}) handler-name))
+  (get (bridge/answer-message handlers :no-rate-limits request {handler-name params} {:wire wire :log log}) handler-name))
 
 (defn- check-record-handler [handlers request [handler-name {[table-key id-key] :record :as handler}] foreign-ids options]
   (for [id (get foreign-ids table-key)

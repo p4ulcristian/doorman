@@ -13,7 +13,7 @@
    [doorman.origin :as origin]
    [doorman.settings :as settings]
    [logbook.api :as logbook]
-   [mailroom.api :as mailroom])
+   [bridge.api :as bridge])
   (:import
    (java.time Duration Instant OffsetDateTime ZoneOffset)
    (java.util UUID)))
@@ -134,7 +134,7 @@
   (let [{:keys [allowed-origin] :as settings} (settings/check-settings settings)]
     {:name  :doorman/find-session
      :enter (fn [context]
-              (let [request (:mailroom/request context)]
+              (let [request (:bridge/request context)]
                 (if (origin/does-request-come-from-allowed-origin? request allowed-origin)
                   (let [{:keys [person-id visitor-id session-flags]} (find-asker pool request settings)]
                     (cond-> (assoc context
@@ -142,6 +142,6 @@
                                    :doorman/visitor-id visitor-id
                                    :doorman/session-flags session-flags)
                       ;; the steps after this one, and what they call, write lines that say who asked
-                      person-id  (update :mailroom/log logbook/with-context {:person-id person-id})
-                      visitor-id (update :mailroom/log logbook/with-context {:visitor-id visitor-id})))
-                  (mailroom/add-answer-to-context context not-from-the-app))))}))
+                      person-id  (update :bridge/log logbook/with-context {:person-id person-id})
+                      visitor-id (update :bridge/log logbook/with-context {:visitor-id visitor-id})))
+                  (bridge/add-answer-to-context context not-from-the-app))))}))

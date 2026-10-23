@@ -16,7 +16,7 @@
    [doorman.test-log :refer [log]]
    [doorman.test-settings :as test-settings]
    [doorman.test-wire :refer [wire]]
-   [mailroom.api :as mailroom]
+   [bridge.api :as bridge]
    [wire.api :as wire-api]))
 
 (def ^:private port (some-> (System/getenv "DOORMAN_TEST_PORT") parse-long))
@@ -133,24 +133,24 @@
 (def ^:private update-status (cellar/make-query-from-sql-text "an order's status" "UPDATE orders SET order__status = 'seen' WHERE order__id = :order/id"))
 (def ^:private insert-order (cellar/make-query-from-sql-text "a new order" "INSERT INTO orders (order__shop_id, order__status) VALUES (:order/shop-id, 'new')"))
 
-(defn- answer-with [f] {:name :answer :enter #(mailroom/add-answer-to-context % (f %))})
+(defn- answer-with [f] {:name :answer :enter #(bridge/add-answer-to-context % (f %))})
 
 (def ^:private handlers
   {:orders/one    {:action :orders/see :record [:orders :order/id] :params-shape [:map [:order/id :uuid]]
                    :answer-shape [:map [:order/id :uuid]] :rate-limit nil :run-steps-in nil
-                   :steps [(answer-with #(select-keys (:mailroom/message-data %) [:order/id]))]}
+                   :steps [(answer-with #(select-keys (:bridge/message-data %) [:order/id]))]}
    :orders/edit   {:action :orders/edit :record [:orders :order/id] :params-shape [:map [:order/id :uuid]]
                    :answer-shape [:map [:order/id :uuid]] :rate-limit nil :run-steps-in nil
-                   :steps [(answer-with #(do (cellar/run-statement! (:doorman/transaction %) update-status (:mailroom/message-data %))
-                                             (select-keys (:mailroom/message-data %) [:order/id])))]}
+                   :steps [(answer-with #(do (cellar/run-statement! (:doorman/transaction %) update-status (:bridge/message-data %))
+                                             (select-keys (:bridge/message-data %) [:order/id])))]}
    :orders/note   {:action :orders/note :record [:orders :order/id] :params-shape [:map [:order/id :uuid]]
                    :answer-shape [:map [:order/id :uuid]] :rate-limit nil :run-steps-in nil
-                   :steps [(answer-with #(select-keys (:mailroom/message-data %) [:order/id]))]}
+                   :steps [(answer-with #(select-keys (:bridge/message-data %) [:order/id]))]}
    :orders/all    {:action :orders/see :params-shape [:map] :answer-shape [:vector :uuid] :rate-limit nil :run-steps-in nil
                    :steps [(answer-with #(mapv :order/id (cellar/find-rows (:doorman/transaction %) find-all-orders {})))]}
    :orders/place  {:action :orders/edit :params-shape [:map [:order/shop-id :uuid]] :answer-shape [:map] :rate-limit nil
                    :run-steps-in nil
-                   :steps [(answer-with #(do (cellar/run-statement! (:doorman/transaction %) insert-order (:mailroom/message-data %)) {}))]}})
+                   :steps [(answer-with #(do (cellar/run-statement! (:doorman/transaction %) insert-order (:bridge/message-data %)) {}))]}})
 
 ;; -----------------------------------------------------------------------------
 ;; Helpers
@@ -209,7 +209,7 @@
 (defn- ask
   "A message's answer as over http (JSON data), by the app's wire."
   [ready cookie handler-name params]
-  (get (mailroom/answer-message ready :no-rate-limits (request-of cookie) {handler-name params} {:wire wire :log log})
+  (get (bridge/answer-message ready :no-rate-limits (request-of cookie) {handler-name params} {:wire wire :log log})
        handler-name))
 
 (defn- texts [answer] (set (map str (filter #(or (uuid? %) (string? %)) (tree-seq coll? seq answer)))))
@@ -455,8 +455,8 @@
             (is (= #{} (orders-seen-by app-pool {:visitor-id v1})) "the visitor has nothing left")
             (is (= #{order-v} (orders-seen-by app-pool {:person-id vic})) "the person has it")
             (is (= #{order-w} (orders-seen-by app-pool {:visitor-id v2})) "another visitor's rows stay")
-            (is (nil? (:doorman/visitor-id (mailroom/run-steps-until-answered [find-step] {:mailroom/request (request-of v1-cookie)
-                                                                                           :mailroom/log log})))
+            (is (nil? (:doorman/visitor-id (bridge/run-steps-until-answered [find-step] {:bridge/request (request-of v1-cookie)
+                                                                                           :bridge/log log})))
                 "the visitor's cookie finds nobody"))
           (finally
             (cellar/stop-pool! app-pool)

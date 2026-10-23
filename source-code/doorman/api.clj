@@ -135,9 +135,9 @@
    signed in), :doorman/visitor-id (a visitor session's id, nil when
    someone is signed in or there is none) and :doorman/session-flags
    (#{} for none), and the person or the visitor is added to the
-   message's log (mailroom's :mailroom/log, given logbook's with-context
+   message's log (bridge's :bridge/log, given logbook's with-context
    {:person-id …} or {:visitor-id …}), so every line the later steps write
-   says who asked. Reads the request at :mailroom/request. Checks the
+   says who asked. Reads the request at :bridge/request. Checks the
    settings first."
   [pool settings]
   (sessions/make-find-session-step pool settings))
@@ -286,7 +286,7 @@
       (cellar/run-statement! pool (cellar/make-query-from-sql-text "a function of doorman's" statement) {}))))
 
 (defn put-access-into-handlers
-  "Every handler (mailroom's table) checked for :action, :params-shape and
+  "Every handler (bridge's table) checked for :action, :params-shape and
    :answer-shape, and for a sentence allowing its action on its :record;
    then each gets the check in front of its steps and runs them in one
    transaction that tells Postgres who is asking (the person or visitor,
@@ -346,7 +346,7 @@
   my-actions/answer-shape)
 
 (defn make-my-actions-handler
-  "A handler, every mailroom key written out, answering \"what may I
+  "A handler, every bridge key written out, answering \"what may I
    do?\" for the browser (parlor's \"can I?\"): the asking person's
    actions by scope (list-actions-of-person, a [:member column action]
    sentence's action where that action is held, a :via's in the scopes

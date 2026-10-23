@@ -8,7 +8,7 @@
    [doorman.test-settings :as test-settings]
    [doorman.cookie :as cookie]
    [cellar.api :as cellar]
-   [mailroom.api :as mailroom]))
+   [bridge.api :as bridge]))
 
 (def ^:private port (some-> (System/getenv "DOORMAN_TEST_PORT") parse-long))
 
@@ -25,7 +25,7 @@
                      set-cookie (assoc "cookie" (first (clojure.string/split set-cookie #";"))))})
 
 (defn- run-find-session [step request]
-  (mailroom/run-steps-until-answered [step] {:mailroom/request request :mailroom/log test-log/log}))
+  (bridge/run-steps-until-answered [step] {:bridge/request request :bridge/log test-log/log}))
 
 (deftest the-cookie
   (testing "only the fingerprint is kept, and it is the same for the same cookie"
@@ -68,11 +68,11 @@
             (let [context (run-find-session step (make-request set-cookie "https://app.test"))]
               (is (= anna (:doorman/person-id context)))
               (reset! test-log/lines [])
-              ((:mailroom/log context) :info :test/later-step {})
+              ((:bridge/log context) :info :test/later-step {})
               (is (= [{"person-id" (str anna)}] (mapv #(get % "context") @test-log/lines))
                   "every line a later step writes says who asked")))
           (testing "another site's request is answered with an error, before any work"
-            (is (contains? (:mailroom/answer (run-find-session step (make-request set-cookie "https://evil.test"))) :error)))
+            (is (contains? (:bridge/answer (run-find-session step (make-request set-cookie "https://evil.test"))) :error)))
           (testing "no cookie: nobody"
             (is (nil? (:doorman/person-id (run-find-session step (make-request nil "https://app.test"))))))
           (testing "signed out: the same cookie finds nobody"
@@ -98,7 +98,7 @@
             (is (uuid? visitor-id))
             (is (= [nil visitor-id #{}] ((juxt :doorman/person-id :doorman/visitor-id :doorman/session-flags) context)))
             (reset! test-log/lines [])
-            ((:mailroom/log context) :info :test/later-step {})
+            ((:bridge/log context) :info :test/later-step {})
             (is (= [{"visitor-id" (str visitor-id)}] (mapv #(get % "context") @test-log/lines)))
             (is (re-find #"Max-Age=172800" set-cookie) ":visitor-session-days, 2")
             (testing "it lasts :visitor-session-days from when it is seen again"

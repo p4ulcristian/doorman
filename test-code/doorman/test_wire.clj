@@ -1,7 +1,7 @@
 (ns doorman.test-wire
   "The tests' wire, made as an app makes its own: once, from wire's
    settings, every key written out (the values wire v0.1 had in effect).
-   doorman hands it to mailroom; it never makes one."
+   doorman hands it to bridge; it never makes one."
   (:require
    [wire.api :as wire]))
 

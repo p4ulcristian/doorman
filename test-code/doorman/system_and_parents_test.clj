@@ -13,7 +13,7 @@
    [doorman.test-log :refer [log]]
    [doorman.test-settings :as test-settings]
    [doorman.test-wire :refer [wire]]
-   [mailroom.api :as mailroom]))
+   [bridge.api :as bridge]))
 
 (def ^:private port test-settings/port)
 
@@ -229,7 +229,7 @@
           (let [ready (doorman/put-access-into-handlers
                        {:emails/mark {:action :shop-emails/mark-bounced :params-shape [:map] :answer-shape [:map]
                                       :rate-limit nil :run-steps-in nil
-                                      :steps [{:name :answer :enter #(mailroom/add-answer-to-context % {})}]}}
+                                      :steps [{:name :answer :enter #(bridge/add-answer-to-context % {})}]}}
                        {:pool app-pool :tables tables :scope-kinds scope-kinds
                         :find-session-step (doorman/make-find-session-step app-pool {:cookie-name "app_session" :session-days 1
                                                                                      :visitor-session-days 1 :renew-after-minutes 60
@@ -241,7 +241,7 @@
                 request {:request-method :post
                          :headers {"origin" "http://app.test" "cookie" (first (str/split set-cookie #";"))}}]
             (is (= {:error "Not found."}
-                   (:emails/mark (mailroom/answer-message ready :no-rate-limits request {:emails/mark {}} {:wire wire :log log}))))))))))
+                   (:emails/mark (bridge/answer-message ready :no-rate-limits request {:emails/mark {}} {:wire wire :log log}))))))))))
 
 (deftest a-record-under-a-record-carries-its-parents-columns
   (if-not port
@@ -274,7 +274,7 @@
                   ready    (doorman/put-access-into-handlers
                             {:jobs/one {:action :jobs/see :record [:jobs :job/id] :params-shape [:map [:job/id :uuid]]
                                         :answer-shape [:map [:job/id :uuid]] :rate-limit nil :run-steps-in nil
-                                        :steps [{:name :answer :enter #(mailroom/add-answer-to-context % (select-keys (:mailroom/message-data %) [:job/id]))}]}}
+                                        :steps [{:name :answer :enter #(bridge/add-answer-to-context % (select-keys (:bridge/message-data %) [:job/id]))}]}}
                             {:pool app-pool :tables tables :scope-kinds scope-kinds
                              :find-session-step (doorman/make-find-session-step app-pool settings)})
                   request  (fn [person]
@@ -284,9 +284,9 @@
                                                                                                   {:settings settings :tables [] :session-flags #{}}))
                                                                    #";"))}})
                   job-id   (:job/id (job))]
-              (is (= {:error "Not found."} (:jobs/one (mailroom/answer-message ready :no-rate-limits (request anna) {:jobs/one {:job/id job-id}}
+              (is (= {:error "Not found."} (:jobs/one (bridge/answer-message ready :no-rate-limits (request anna) {:jobs/one {:job/id job-id}}
                                                                                {:wire wire :log log}))))
-              (is (= {:job/id (str job-id)} (:jobs/one (mailroom/answer-message ready :no-rate-limits (request mia) {:jobs/one {:job/id job-id}}
+              (is (= {:job/id (str job-id)} (:jobs/one (bridge/answer-message ready :no-rate-limits (request mia) {:jobs/one {:job/id job-id}}
                                                                           {:wire wire :log log})))
                   "Mia, in shop 9 too, still does")
               (is (= [] (doorman/find-leaks ready (request anna) {:jobs [job-id]} {:wire wire :log log :seed 7 :size 10}))))))))))

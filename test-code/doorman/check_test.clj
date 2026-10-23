@@ -9,7 +9,7 @@
    [cellar.api :as cellar]
    [doorman.test-log :as test-log :refer [log]]
    [doorman.test-wire :refer [wire]]
-   [mailroom.api :as mailroom])
+   [bridge.api :as bridge])
   (:import
    (java.net URI)
    (java.net.http HttpClient HttpRequest HttpRequest$BodyPublishers HttpResponse$BodyHandlers)))
@@ -53,9 +53,9 @@
 
 (def ^:private answer-the-order
   {:name  :answer-the-order
-   :enter (fn [{:mailroom/keys [log message-data] :as context}]
+   :enter (fn [{:bridge/keys [log message-data] :as context}]
             (log :info :test/answering {:order/id (:order/id message-data)})
-            (mailroom/add-answer-to-context context {:order/id (:order/id message-data)}))})
+            (bridge/add-answer-to-context context {:order/id (:order/id message-data)}))})
 
 (def ^:private carl #uuid "00000000-0000-4000-8000-00000000000e")
 
@@ -65,7 +65,7 @@
                    :answer-shape [:map]
                    :rate-limit   nil
                    :run-steps-in nil
-                   :steps        [{:name :remind :enter #(mailroom/add-answer-to-context % {})}]}
+                   :steps        [{:name :remind :enter #(bridge/add-answer-to-context % {})}]}
    :orders/one {:action       :orders/see
                 :record       [:orders :order/id]
                 :params-shape [:map [:order/id :uuid]]
@@ -98,9 +98,10 @@
       (doorman/add-membership! transaction [:shop shop-7] anna "Staff"))))
 
 (def ^:private server-settings
-  "mailroom's settings: three addresses, no proxy in front."
+  "bridge's settings: three addresses, no proxy in front."
   {:ip "127.0.0.1" :port 0 :proxy-protocol :disable :client-address-header nil :server-header nil
-   :max-body-bytes 8388608 :max-header-line-bytes 8192 :max-ws-message-bytes 4194304
+   :max-body-bytes 8388608 :max-request-head-bytes 8192 :max-ws-message-bytes 4194304
+   :idle-timeout-ms 60000 :threads {:min 8 :max 50 :idle-timeout-ms 60000}
    :addresses {:http "/mail/http" :sse "/mail/sse" :ws "/mail/ws"}
    :ping-every-ms 25000 :sse-reconnect-after-ms 3000 :ws-reopen-after-ms 1000
    :stop-wait-ms 10000 :stop-wait-after-cut-ms 1000
@@ -108,11 +109,11 @@
    :metric-buckets {:answer-seconds [0.01 0.1 1]}})
 
 (def ^:private server-options
-  "mailroom's options: askers by address, no hooks; a new meter is added
+  "bridge's options: askers by address, no hooks; a new meter is added
    where the routes are made."
   {:wire                wire
    :log                 log
-   :find-rate-limit-key #(mailroom/find-client-address % nil)
+   :find-rate-limit-key #(bridge/find-client-address % nil)
    :on-sse-open nil :on-sse-close nil :on-ws-open nil :on-ws-close nil})
 
 (def ^:private no-session-step {:name :no-session :enter identity})
@@ -122,7 +123,7 @@
                         (doorman/put-access-into-handlers {:x/y {:steps []}} {:pool (Object.) :tables [shops orders] :scope-kinds scope-kinds
                                                                               :find-session-step no-session-step}))))
 
-(deftest a-handler-writes-out-mailroom-s-keys
+(deftest a-handler-writes-out-bridge-s-keys
   (let [problems (try (doorman/put-access-into-handlers
                        {:x/y (dissoc (:orders/remind handlers) :rate-limit :run-steps-in)
                         :x/z (assoc (:orders/remind handlers) :run-steps-in (fn [run context] (run context)))}
@@ -152,7 +153,7 @@
     (let [pool   (test-settings/start-pool! (System/getenv "DOORMAN_TEST_USER") 4)
           ready  (doorman/put-access-into-handlers handlers {:pool pool :tables [shops orders] :scope-kinds scope-kinds
                                                             :find-session-step (doorman/make-find-session-step pool settings)})
-          server (mailroom/start-server! (get-in (first (mailroom/make-routes-for-messages ready server-settings (assoc server-options :meter (test-settings/make-meter)))) [1 :post :handler])
+          server (bridge/start-server! (get-in (first (bridge/make-routes-for-messages ready server-settings (assoc server-options :meter (test-settings/make-meter)))) [1 :post :handler])
                                           server-settings {:log log})
           cookie #(first (str/split (:set-cookie (doorman/sign-in! pool {:headers {}} % {:settings settings :tables [] :session-flags #{}})) #";"))]
       (try
@@ -182,7 +183,7 @@
         (testing "nobody signed in: not found"
           (is (= "{\"orders/one\":{\"error\":\"Not found.\"}}" (ask (:port server) nil order-42))))
         (finally
-          (mailroom/stop-server! server)
+          (bridge/stop-server! server)
           (cellar/stop-pool! pool))))))
 
 (deftest an-action-that-only-reads

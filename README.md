@@ -19,14 +19,14 @@ io.github.p4ulcristian/doorman {:git/tag "v0.7.5" :git/sha "f2e63e2"}
 ```
 
 Needs [cellar](https://github.com/p4ulcristian/cellar) (Postgres, tables as
-maps, their gates), [mailroom](https://github.com/p4ulcristian/mailroom) (a
+maps, their gates), [bridge](https://github.com/p4ulcristian/bridge) (a
 handler's steps), [logbook](https://github.com/p4ulcristian/logbook) (the
 message's log), malli with test.check (the settings checked, the leak
 test's params) and jsonista. One public namespace, `doorman.api`; its parts
 are `doorman.*`. The leak test takes the app's
 [wire](https://github.com/p4ulcristian/wire) under `:wire` and its log under
 `:log`; doorman makes neither. The find-session step adds the person to the
-message's log (mailroom's `:mailroom/log`, `{:person-id …}`), so every later
+message's log (bridge's `:bridge/log`, `{:person-id …}`), so every later
 step's lines say who asked
 ([why](decisions/2026-10-22-the-session-step-adds-the-person-to-the-log.md)).
 
@@ -39,7 +39,7 @@ step's lines say who asked
 | who | `sign-in!` `sign-out!` `sign-out-everywhere!` | a session made for a proven person, with its flags (the Set-Cookie text back), a visitor's rows moved to them and the request's old session ended, in one transaction; ended at once |
 | who | `start-visitor-session!` | a session for a visitor, on the app's own route: its id, which the rows kept for them name, and the Set-Cookie text |
 | who | `delete-ended-sessions!` | forgets ended sessions; for a nightly background job |
-| who | `make-find-session-step` | the step first in a handler: the Origin checked, `:doorman/person-id`, `:doorman/visitor-id` and `:doorman/session-flags` in the context, the person or visitor in `:mailroom/log` |
+| who | `make-find-session-step` | the step first in a handler: the Origin checked, `:doorman/person-id`, `:doorman/visitor-id` and `:doorman/session-flags` in the context, the person or visitor in `:bridge/log` |
 | who | `find-session-key-of-request` | a hash of the session cookie, for rate limits |
 | what | `access-tables` | its tables, `doorman.scopes` `doorman.roles` `doorman.role_actions` `doorman.memberships` |
 | what | `check-scope-kinds` | the app's kinds of scope, checked, every key written out |
@@ -57,7 +57,7 @@ step's lines say who asked
 
 Nothing has a default: every setting and option is written out; a missing
 one refuses, named, with every other problem at once. A handler writes out
-every key mailroom reads (`:steps :params-shape :answer-shape :rate-limit
+every key bridge reads (`:steps :params-shape :answer-shape :rate-limit
 :run-steps-in`); doorman wants both shapes real and `:run-steps-in` nil:
 [the decision](decisions/2026-10-22-a-handler-writes-out-mailrooms-keys.md).
 
@@ -122,7 +122,7 @@ every key mailroom reads (`:steps :params-shape :answer-shape :rate-limit
                  :record       [:orders :order/id]
                  :params-shape [:map [:order/id :uuid]]
                  :answer-shape [:map [:order/id :uuid]]
-                 :rate-limit   nil                               ; mailroom's, nil for none
+                 :rate-limit   nil                               ; bridge's, nil for none
                  :run-steps-in nil                               ; nil: doorman's transaction runs them
                  :steps        [find-order add-order-answer]}}   ; they use (:doorman/transaction context)
    {:pool app-pool :tables app-tables :scope-kinds scope-kinds

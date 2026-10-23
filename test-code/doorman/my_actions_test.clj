@@ -11,7 +11,7 @@
    [doorman.test-log :refer [log]]
    [doorman.test-settings :as test-settings]
    [doorman.test-wire :refer [wire]]
-   [mailroom.api :as mailroom]
+   [bridge.api :as bridge]
    [wire.api :as wire-api]))
 
 (def ^:private port (some-> (System/getenv "DOORMAN_TEST_PORT") parse-long))
@@ -78,7 +78,7 @@
     (is (= :doorman/bad-options (:type errors)))
     (is (= #{:rate-limit} (set (keys (:errors errors)))) "nil written out for no rate limit")))
 
-(deftest the-handler-writes-out-mailroom-s-keys
+(deftest the-handler-writes-out-bridge-s-keys
   (let [handler (doorman/make-my-actions-handler {:pool (Object.) :tables tables :scope-kinds scope-kinds
                                                   :find-session-step no-session-step :rate-limit {:max 60 :per-ms 60000}})]
     (is (= #{:params-shape :answer-shape :rate-limit :run-steps-in :steps} (set (keys handler))))
@@ -92,14 +92,14 @@
    shape), back into shaped data by the same shape."
   [handlers cookie origin]
   (let [answer (:doorman/my-actions
-                (mailroom/answer-message handlers :no-rate-limits
+                (bridge/answer-message handlers :no-rate-limits
                                          {:request-method :post
                                           :headers        (cond-> {}
                                                             origin (assoc "origin" origin)
                                                             cookie (assoc "cookie" cookie))}
                                          {:doorman/my-actions {}}
                                          {:wire wire :log log}))]
-    (if (mailroom/is-error-answer? answer)
+    (if (bridge/is-error-answer? answer)
       answer
       (:shaped-data (wire-api/turn-json-data-into-shaped-data-or-errors wire doorman/my-actions-answer-shape answer)))))
 

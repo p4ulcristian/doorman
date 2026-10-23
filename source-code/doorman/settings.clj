@@ -85,7 +85,7 @@
    actions are open without a membership.
    :scope-kinds: the app's kinds of scope (check-scope-kinds).
    :find-session-step: make-find-session-step's step.
-   :rate-limit: mailroom's, {:max 60 :per-ms 60000} per asker, or nil for
+   :rate-limit: bridge's, {:max 60 :per-ms 60000} per asker, or nil for
    none."
   [:map {:closed true}
    [:pool some?]
@@ -104,7 +104,7 @@
   "find-leaks's options, every key required: malli's generator makes each
    handler's other params from its :params-shape.
    :wire: the app's wire (wire.api's make-wire-from-settings), which each
-   message is answered by, as over http (mailroom's answer-message);
+   message is answered by, as over http (bridge's answer-message);
    doorman never makes one.
    :log: the app's log (logbook's log-function), which each message's log
    is made from, as over http; doorman never makes one.

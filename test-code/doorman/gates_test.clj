@@ -11,7 +11,7 @@
    [cellar.api :as cellar]
    [doorman.test-log :refer [log]]
    [doorman.test-wire :refer [wire]]
-   [mailroom.api :as mailroom])
+   [bridge.api :as bridge])
   (:import
    (java.net URI)
    (java.net.http HttpClient HttpRequest HttpRequest$BodyPublishers HttpResponse$BodyHandlers)))
@@ -61,20 +61,20 @@
   {:orders/all   {:action :orders/see :params-shape [:map] :answer-shape [:vector :uuid]
                   :rate-limit nil :run-steps-in nil
                   :steps  [{:name  :answer-all-orders
-                            :enter #(mailroom/add-answer-to-context
+                            :enter #(bridge/add-answer-to-context
                                      % (mapv :order/id (cellar/find-rows (:doorman/transaction %) find-all-orders {})))}]}
    :orders/sneak {:action :orders/see :params-shape [:map [:order/shop-id :uuid]] :answer-shape [:map]
                   :rate-limit nil :run-steps-in nil
                   :steps  [{:name  :insert-order-while-only-seeing
                             :enter #(do (cellar/run-statement! (:doorman/transaction %) insert-order
-                                                                 (:mailroom/message-data %))
-                                        (mailroom/add-answer-to-context % {}))}]}
+                                                                 (:bridge/message-data %))
+                                        (bridge/add-answer-to-context % {}))}]}
    :orders/place {:action :orders/edit :params-shape [:map [:order/shop-id :uuid]] :answer-shape [:map]
                   :rate-limit nil :run-steps-in nil
                   :steps  [{:name  :insert-order
                             :enter #(do (cellar/run-statement! (:doorman/transaction %) insert-order
-                                                            (:mailroom/message-data %))
-                                        (mailroom/add-answer-to-context % {}))}]}})
+                                                            (:bridge/message-data %))
+                                        (bridge/add-answer-to-context % {}))}]}})
 
 (defn- run-sql! [pool text] (cellar/run-statement! pool (cellar/make-query-from-sql-text "test" text) {}))
 
@@ -105,9 +105,10 @@
                 (HttpResponse$BodyHandlers/ofString))))
 
 (def ^:private server-settings
-  "mailroom's settings: three addresses, no proxy in front."
+  "bridge's settings: three addresses, no proxy in front."
   {:ip "127.0.0.1" :port 0 :proxy-protocol :disable :client-address-header nil :server-header nil
-   :max-body-bytes 8388608 :max-header-line-bytes 8192 :max-ws-message-bytes 4194304
+   :max-body-bytes 8388608 :max-request-head-bytes 8192 :max-ws-message-bytes 4194304
+   :idle-timeout-ms 60000 :threads {:min 8 :max 50 :idle-timeout-ms 60000}
    :addresses {:http "/mail/http" :sse "/mail/sse" :ws "/mail/ws"}
    :ping-every-ms 25000 :sse-reconnect-after-ms 3000 :ws-reopen-after-ms 1000
    :stop-wait-ms 10000 :stop-wait-after-cut-ms 1000
@@ -115,11 +116,11 @@
    :metric-buckets {:answer-seconds [0.01 0.1 1]}})
 
 (def ^:private server-options
-  "mailroom's options: askers by address, no hooks; a new meter is added
+  "bridge's options: askers by address, no hooks; a new meter is added
    where the routes are made."
   {:wire                wire
    :log                 log
-   :find-rate-limit-key #(mailroom/find-client-address % nil)
+   :find-rate-limit-key #(bridge/find-client-address % nil)
    :on-sse-open nil :on-sse-close nil :on-ws-open nil :on-ws-close nil})
 
 (deftest a-table-that-names-a-scope-needs-access
@@ -134,16 +135,16 @@
       (let [app-pool (start-pool! "doorman_app")
             ready    (doorman/put-access-into-handlers handlers {:pool app-pool :tables [shops orders] :scope-kinds scope-kinds
                                                                 :find-session-step (doorman/make-find-session-step app-pool settings)})
-            server   (mailroom/start-server! (get-in (first (mailroom/make-routes-for-messages ready server-settings (assoc server-options :meter (test-settings/make-meter)))) [1 :post :handler])
+            server   (bridge/start-server! (get-in (first (bridge/make-routes-for-messages ready server-settings (assoc server-options :meter (test-settings/make-meter)))) [1 :post :handler])
                                               server-settings {:log log})
             cookie   #(first (str/split (:set-cookie (doorman/sign-in! app-pool {:headers {}} % {:settings settings :tables [] :session-flags #{}})) #";"))]
         (try
           (testing "the app's own role, which owns nothing, signs in and out, and the functions answer it"
             (let [request {:request-method :post :headers {"origin" "http://app.test" "cookie" (cookie anna)}}
                   step    (doorman/make-find-session-step app-pool settings)]
-              (is (= anna (:doorman/person-id (mailroom/run-steps-until-answered [step] {:mailroom/request request :mailroom/log log}))))
+              (is (= anna (:doorman/person-id (bridge/run-steps-until-answered [step] {:bridge/request request :bridge/log log}))))
               (doorman/sign-out! app-pool request settings)
-              (is (nil? (:doorman/person-id (mailroom/run-steps-until-answered [step] {:mailroom/request request :mailroom/log log}))))
+              (is (nil? (:doorman/person-id (bridge/run-steps-until-answered [step] {:bridge/request request :bridge/log log}))))
               (is (= {:asking/nobody true :asking/no-scopes true}
                      (cellar/find-one-row app-pool (cellar/make-query-from-sql-text
                                                     "the functions, as the app's role"
@@ -177,13 +178,13 @@
                 (let [leaky {:orders/leaky {:action :orders/see :params-shape [:map] :answer-shape [:vector :uuid]
                                             :rate-limit nil :run-steps-in nil
                                             :steps [{:name  :read-with-the-owner
-                                                     :enter #(mailroom/add-answer-to-context
+                                                     :enter #(bridge/add-answer-to-context
                                                               % (mapv :order/id (cellar/find-rows owner-pool find-all-orders {})))}]}}
                       ready-leaky (doorman/put-access-into-handlers leaky {:pool app-pool :tables [shops orders] :scope-kinds scope-kinds
                                                                           :find-session-step (doorman/make-find-session-step app-pool settings)})]
                   (is (= [{:handler :orders/leaky :gave-back [(str order-99)]}]
                          (doorman/find-leaks ready-leaky anna-request {:orders [order-99]} {:wire wire :log log :seed 7 :size 30})))))))
           (finally
-            (mailroom/stop-server! server)
+            (bridge/stop-server! server)
             (cellar/stop-pool! app-pool)
             (cellar/stop-pool! owner-pool)))))))
