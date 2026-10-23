@@ -9,8 +9,8 @@
  {;; Postgres: the queries, the table maps and their gates
   ;; on its tidy-up branch, not released: a table map writes out :uniques and :checks,
   ;; a reference what it does on delete, update and when checked, an index as a map;
-  ;; migrate! takes {:tables :extensions :functions :views}
-  io.github.p4ulcristian/cellar   {:git/sha "d84e3e9feff9252f1cf9bacc255ae140deccb675"}
+  ;; migrate! takes {:tables :extensions :functions :views}, a function a file or a made {:name :sql}
+  io.github.p4ulcristian/cellar   {:git/sha "271282cf00308ac7293113423dff3d81e8e6ca57"}
   ;; a handler's steps: the session step and the check are steps; answer-message for the leak test;
   ;; refuse, and a handler's :refusals
   ;; on its tidy-up branch, not released: a refusal is a named reason, declared on its handler;

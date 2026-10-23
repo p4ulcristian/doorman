@@ -27,8 +27,9 @@
    table maps become SQL conditions (make-sql-conditions): the check in
    front of every handler's steps (put-access-into-handlers), and the
    gates, Postgres's row rules (put-gates-on-tables, for cellar), with the
-   functions they call (function-files, declared to cellar, and
-   install-access-functions!, those made from the sentences). The leak test proves
+   functions they call (function-files, doorman's own, and
+   make-access-functions, those made from the sentences, both declared
+   to cellar). The leak test proves
    them (find-leaks); explain-refusal says why one message would be
    refused.
 
@@ -526,9 +527,10 @@
 
 (def function-files
   "The .sql files of the SQL functions the check and the gates read who is
-   asking from, for cellar's :functions beside the app's own (cellar makes
-   them before the tables, so the gates can call them, and drops a
-   function in doorman's folder that no file makes):
+   asking from, for cellar's :functions beside make-access-functions'
+   and the app's own (cellar makes them before the tables, so the gates
+   can call them, and drops a function in doorman's folder that nothing
+   declared makes):
    doorman.find_asking_person(), find_asking_visitor(),
    find_asking_system(), find_scopes_holding(kind, action),
    has_session_flag(flag), is_passing(), find_moving_visitor(),
@@ -554,13 +556,11 @@
         ["find_asking_person" "find_asking_visitor" "find_asking_system" "find_scopes_holding"
          "has_session_flag" "is_passing" "find_moving_visitor" "find_moving_person" "is_acting"]))
 
-(def ^:private create-doorman-folder
-  (cellar/make-query-from-sql-text "doorman's folder" "CREATE SCHEMA IF NOT EXISTS doorman"))
-
-(defn install-access-functions!
-  "Makes the folder doorman, if it isn't there, and installs, or replaces, the SQL functions the app's sentences and
-   denies need, made from them: a :via's (doorman.via_…), a scope
-   state's (doorman.denied_…), the guard of a table a :via reads
+(defn make-access-functions
+  "The SQL functions the app's sentences and denies need, made from them,
+   as cellar's :functions takes a made one, {:name :sql}, every key
+   written out: a :via's (doorman.via_…), a scope state's
+   (doorman.denied_…), the guard of a table a :via reads
    (doorman.unchanged_…), a record under a record's fill
    (doorman.fill_…), and, per table with a one-column primary key and per
    action of its sentences, the one a query file calls to narrow a list
@@ -569,19 +569,21 @@
      SELECT order__id, order__note FROM orders
      WHERE order__id IN (SELECT * FROM doorman.\"may orders/edit on orders\"())
 
-   The sentences are checked first. Run it as the owner, before migrate:
-   Postgres refuses a gate whose function doesn't exist yet.
+   The sentences are checked first. The app passes them to cellar's
+   migrate! with function-files and its own (cellar's decision \":functions
+   may be SQL text a library makes\"), so cellar makes them before the
+   gates that call them, compares them on every plan, and drops one when
+   the sentence that made it is gone:
 
-   Not declared to cellar: they are made from data, and cellar's
-   :functions takes only .sql files. cellar's migrate drops every function
-   in doorman's folder that no declared file makes, these among them (and
-   fails where a gate or a trigger still calls one); how they are declared
-   is not yet decided."
-  [pool tables scope-kinds]
-  (let [statements (functions/make-function-statements tables scope-kinds)]
-    (cellar/run-statement! pool create-doorman-folder {})
-    (doseq [statement statements]
-      (cellar/run-statement! pool (cellar/make-query-from-sql-text "a function of doorman's" statement) {}))))
+     (cellar/migrate! owner-pool {:tables     (doorman/put-gates-on-tables tables scope-kinds)
+                                  :extensions []
+                                  :functions  (-> doorman/function-files
+                                                  (into (doorman/make-access-functions tables scope-kinds))
+                                                  (into app-function-files))
+                                  :views      []}
+                      changes migrate-options)"
+  [tables scope-kinds]
+  (functions/make-functions tables scope-kinds))
 
 (defn put-access-into-handlers
   "Every handler (bridge's table) checked, with every problem at once: its
@@ -646,7 +648,8 @@
 
      (cellar/migrate! pool {:tables     (doorman/put-gates-on-tables tables scope-kinds)
                             :extensions []
-                            :functions  doorman/function-files   ; with the app's own
+                            :functions  (into doorman/function-files   ; with the app's own
+                                              (doorman/make-access-functions tables scope-kinds))
                             :views      []}
                       changes migrate-options)"
   [tables scope-kinds]

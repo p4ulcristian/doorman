@@ -58,7 +58,7 @@ step's lines say who asked
 | what | `make-my-actions-handler` `my-actions-answer-shape` (the shape on both sides: `doorman.api`'s `.cljs` half has it too) | "what may I do?" for the browser: the asker's actions by scope, and the open ones under nil kind and id, every scope; the denies taken out; read-only, as the asker |
 | what | `make-sql-conditions` | the sentences, checked, as SQL: one condition per action and per operation, the denies in them |
 | what | `function-files` | the `.sql` files of the SQL functions the check and the gates read who is asking from, for cellar's `:functions` beside the app's own |
-| what | `install-access-functions!` | the SQL functions made from the app's sentences and denies (a `:via`'s, a scope state's, the guard's, a record under a record's fill, `doorman."may <action> on <table>"()`), before migrate; not declared to cellar, whose migrate drops them (how they are declared is not yet decided) |
+| what | `make-access-functions` | the SQL functions made from the app's sentences and denies (a `:via`'s, a scope state's, the guard's, a record under a record's fill, `doorman."may <action> on <table>"()`), as cellar's made functions, `{:name :sql}`: the app passes them to `migrate!` with `function-files` and its own, and cellar makes them before the gates, compares them and drops one whose sentence is gone ([why](https://github.com/p4ulcristian/cellar/blob/tidy-up/decisions/2026-10-23-functions-may-be-sql-text-a-library-makes.md)) |
 | what | `put-access-into-handlers` | every handler says where it acts (`:record`, or `:scope` `[kind param]`, `:every-scope-holding-the-action`, `:no-scope`); the check in front of its steps, which run in a transaction where Postgres hears only the handler's action, in those scopes ([why](decisions/2026-10-23-a-handler-says-where-it-acts-and-postgres-hears-only-that.md)); a param marked `[:uuid {:doorman/row-of :workstations}]` must be a row the action reads there, else `:doorman/not-found`, before any step ([why](decisions/2026-10-23-a-param-may-say-it-is-a-row-of-a-table.md)) |
 | what | `put-gates-on-tables` | the table maps with their gates, `:gates nil` on the ungated ones, and a record under a record (`:parent`) given its link to the parent and the fill of its carried columns, for cellar |
 | what | `find-leaks` | the leak test, for the app's own tests, by the app's wire, log and meter (`:wire`, `:log`, `:meter`, with bridge's `:metric-buckets`); a record or scope it must not reach must be refused `:doorman/not-found` (`:doorman/signed-out` for an asker nobody signed in); a `:scope [kind param]` handler asked in each foreign scope (`:scope-kinds`) |
@@ -146,9 +146,10 @@ app's shapes by name. Each needs its text in the app's catalogs.
 ;; the deploy, as the role that owns the tables
 (let [tables (into (doorman/put-gates-on-tables app-tables scope-kinds)
                    (conj doorman/access-tables doorman/sessions-table doorman/tokens-table))]
-  (doorman/install-access-functions! owner-pool app-tables scope-kinds)   ; before the gates: they call these
   (cellar/migrate! owner-pool {:tables tables :extensions []
-                               :functions doorman/function-files :views []}   ; cellar makes these before the gates
+                               :functions (into doorman/function-files       ; cellar makes these before the gates:
+                                                (doorman/make-access-functions app-tables scope-kinds))   ; they call them
+                               :views []}
                    changes migrate-options)   ; cellar's time limits for each part
   (cellar/grant-tables-to-role! owner-pool tables "app"))   ; the folder doorman too
 

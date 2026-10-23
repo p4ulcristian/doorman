@@ -130,10 +130,9 @@
   (let [owner-pool (test-settings/start-pool! "doorman_owner" 2)
         ready      (into (doorman/put-gates-on-tables tables scope-kinds) (conj doorman/access-tables doorman/sessions-table doorman/tokens-table))]
     (try
-      (doorman/install-access-functions! owner-pool tables scope-kinds)
-      (with-out-str @(:slow-part (cellar/migrate! owner-pool (test-settings/declare-tables ready) [] test-settings/migrate-options)))
+      (with-out-str @(:slow-part (cellar/migrate! owner-pool (test-settings/declare-tables-and-access ready tables scope-kinds) [] test-settings/migrate-options)))
       (cellar/grant-tables-to-role! owner-pool ready "doorman_app")
-      (is (cellar/does-database-match-tables? owner-pool (test-settings/declare-tables ready) []) "the link and the fill are in the maps: nothing left to do")
+      (is (cellar/does-database-match-tables? owner-pool (test-settings/declare-tables-and-access ready tables scope-kinds) []) "the link and the fill are in the maps: nothing left to do")
       (finally (cellar/stop-pool! owner-pool))))
   (run-sql! super-pool (str "INSERT INTO shops VALUES ('" shop-7 "', 'open'), ('" shop-8 "', 'suspended'), ('" shop-9 "', 'open')"))
   (cellar/run-in-transaction! super-pool {:read-only? false}

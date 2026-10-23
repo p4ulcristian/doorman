@@ -99,8 +99,7 @@
 
 (defn- make-database! [pool]
   (run-sql! pool "DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public; DROP SCHEMA IF EXISTS doorman CASCADE; DROP SCHEMA IF EXISTS cellar CASCADE")
-  (with-out-str @(:slow-part (cellar/migrate! pool (test-settings/declare-tables (into [shops orders doorman/sessions-table doorman/tokens-table] doorman/access-tables)) [] test-settings/migrate-options)))
-  (doorman/install-access-functions! pool [shops orders] scope-kinds)
+  (with-out-str @(:slow-part (cellar/migrate! pool (test-settings/declare-tables-and-access (into [shops orders doorman/sessions-table doorman/tokens-table] doorman/access-tables) [shops orders] scope-kinds) [] test-settings/migrate-options)))
   (run-sql! pool (str "INSERT INTO shops VALUES ('" shop-7 "'), ('" shop-9 "')"))
   (run-sql! pool (str "INSERT INTO orders VALUES ('" order-42 "', '" shop-7 "'), ('" order-99 "', '" shop-9 "')"))
   (cellar/run-in-transaction! pool {:read-only? false}

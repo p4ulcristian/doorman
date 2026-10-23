@@ -43,6 +43,16 @@
   [tables]
   {:tables tables :extensions [] :functions doorman/function-files :views []})
 
+(defn declare-tables-and-access
+  "What the tests declare to cellar beside the tables, for tables with
+   sentences: doorman's own functions and those it makes from the
+   sentences of tables and the scope kinds, no extensions or views."
+  [ready-tables tables scope-kinds]
+  {:tables     ready-tables
+   :extensions []
+   :functions  (into doorman/function-files (doorman/make-access-functions tables scope-kinds))
+   :views      []})
+
 (def migrate-options
   {:instant-part {:statement-timeout-ms 10000 :lock-timeout-ms 5000}
    :slow-part    {:statement-timeout-ms :none :lock-timeout-ms 5000}

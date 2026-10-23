@@ -89,8 +89,8 @@
   (run-sql! owner-pool "DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public; DROP SCHEMA IF EXISTS doorman CASCADE; DROP SCHEMA IF EXISTS cellar CASCADE")
   (run-sql! owner-pool "DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'doorman_app') THEN CREATE ROLE doorman_app LOGIN; END IF; END $$")
   (let [tables (into (doorman/put-gates-on-tables [shops orders] scope-kinds) (conj doorman/access-tables doorman/sessions-table doorman/tokens-table))]
-    (doorman/install-access-functions! owner-pool [shops orders] scope-kinds)        ; before the gates: their policies call these
-    (with-out-str @(:slow-part (cellar/migrate! owner-pool (test-settings/declare-tables tables) [] test-settings/migrate-options)))
+    ;; doorman's made functions declared with its files: cellar makes them before the gates that call them
+    (with-out-str @(:slow-part (cellar/migrate! owner-pool (test-settings/declare-tables-and-access tables [shops orders] scope-kinds) [] test-settings/migrate-options)))
     (cellar/grant-tables-to-role! owner-pool tables "doorman_app"))
   (run-sql! owner-pool (str "INSERT INTO shops VALUES ('" shop-7 "'), ('" shop-9 "')"))
   (run-sql! owner-pool (str "INSERT INTO orders VALUES ('" order-42 "', '" shop-7 "'), ('" order-99 "', '" shop-9 "')"))

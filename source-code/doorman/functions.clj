@@ -103,27 +103,31 @@
          " WHERE " action-condition ";\n"
          "END $$")))
 
-(defn make-function-statements
-  "Every statement making the functions the app's sentences and denies
-   need. The sentences are checked first."
+(defn make-functions
+  "Every function the app's sentences and denies need, as cellar's
+   :functions takes a made one: {:name \"doorman.denied_ab12\" :sql
+   \"CREATE OR REPLACE FUNCTION doorman.denied_ab12() …\"}, its name as its
+   SQL writes it. The sentences are checked first."
   [tables scope-kinds]
   (let [conditions    (conditions/make-sql-conditions tables scope-kinds)
         tables-by-key (into {} (map (juxt :table identity)) tables)
         place         {:tables-by-key tables-by-key :scope-kinds scope-kinds}
         vias          (distinct (for [{:keys [access]} tables :when (sequential? access)
                                       {:keys [via]} access :when via]
-                                  via))]
+                                  via))
+        made          (fn [function-name sql-text] {:name function-name :sql sql-text})]
     (vec (concat
-          (map #(make-via-function-statement % place) vias)
+          (for [via vias]
+            (made (sentences/find-via-function-name via tables-by-key) (make-via-function-statement via place)))
           (for [deny (scope-kinds/find-denies scope-kinds) :when (:when deny)]
-            (make-denied-function-statement deny place))
+            (made (conditions/find-denied-function-name deny) (make-denied-function-statement deny place)))
           (for [table tables
                 :let [guard (conditions/find-guard (:table table) tables)]
                 :when (and guard (= 1 (count (sentences/find-primary-key-columns table))))]
-            (make-unchanged-function-statement table guard))
+            (made (conditions/find-unchanged-function-name (:table table) guard) (make-unchanged-function-statement table guard)))
           (for [table tables
                 :when (and (sequential? (:access table)) (= 1 (count (sentences/find-primary-key-columns table))))
                 [action condition] (sort-by (comp str key) (get-in conditions [(:table table) :actions]))]
-            (make-may-function-statement table action condition))
+            (made (conditions/find-may-function-name action (:table table)) (make-may-function-statement table action condition)))
           (for [table tables :when (:parent table)]
-            (parents/make-fill-function-statement table tables-by-key))))))
+            (made (parents/find-fill-function-name table) (parents/make-fill-function-statement table tables-by-key)))))))
