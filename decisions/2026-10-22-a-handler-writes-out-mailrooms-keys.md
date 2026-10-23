@@ -1,5 +1,7 @@
 # A handler writes out mailroom's keys, and its :run-steps-in is nil
 
+> **Changed in part** by [A refusal is a named reason, declared on its handler](https://github.com/p4ulcristian/bridge/blob/tidy-up/decisions/2026-10-23-a-refusal-is-a-named-reason-declared-on-its-handler.md) (bridge's, 2026-10-23, built on tidy-up, not released): bridge's keys include `:refusals` (`{}` for none), never naming doorman's own reasons.
+
 > Changes in part [access, piece 3: the check](2026-10-22-access-piece-3-the-check.md). Since v0.1.1, on mailroom v0.1.3.
 
 **Decision:** doorman takes mailroom v0.1.3, where a handler writes out every key mailroom reads ([mailroom's "Every value that sets behaviour is a setting"](https://github.com/p4ulcristian/mailroom/blob/main/decisions/2026-10-22-every-value-that-sets-behaviour-is-a-setting.md)).

@@ -1,5 +1,7 @@
 # explain-refusal answers why, as plain data
 
+> **Changed in part** by [A refusal is a named reason, declared on its handler](https://github.com/p4ulcristian/bridge/blob/tidy-up/decisions/2026-10-23-a-refusal-is-a-named-reason-declared-on-its-handler.md) (bridge's, 2026-10-23, built on tidy-up, not released): its `:answer` is `:allowed` or the check's reason: `:doorman/not-found`, `:doorman/not-allowed`, `:doorman/signed-out`.
+
 > Since v0.7.0. Answers "the explain tool names the deny that said no" of [Access rules are sentences in doorman's language](2026-10-17-access-rules-are-sentences-in-doormans-language.md), and what study's `:why-refused` tool needs (study's "The tools are the app's functions, in study.tools").
 
 **Decision:** `(explain-refusal {:pool :handlers :tables :scope-kinds} {:person-id :visitor-id :session-flags} handler-name params)`, every key required, says what the check would answer the asker's message, and why, as data:
