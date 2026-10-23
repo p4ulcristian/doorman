@@ -110,8 +110,8 @@
                          :when (contains? (scope-kinds/find-what-action-does scope-kinds other) :read)]
                      sql)]
     (cond (does-sql-hold? transaction table id action-sql) :allowed
-          (and (seq reads) (does-sql-hold? transaction table id (str/join " OR " (map #(str "(" % ")") reads)))) :not-allowed
-          :else :not-found)))
+          (and (seq reads) (does-sql-hold? transaction table id (str/join " OR " (map #(str "(" % ")") reads)))) :doorman/not-allowed
+          :else :doorman/not-found)))
 
 (defn- explain-record [transaction {:keys [tables scope-kinds]} conditions asker action [table-key id-key] params actions-by-scope]
   (let [place      {:tables-by-key (into {} (map (juxt :table identity)) tables) :scope-kinds scope-kinds}
@@ -120,7 +120,7 @@
         row        (when id (find-row transaction table id))
         row-scopes (when row (find-row-scopes table row place))]
     {:record            {:table table-key :id id :exists? (some? row) :scopes (or row-scopes [])}
-     :answer            (if row (find-answer transaction table id action conditions scope-kinds) :not-found)
+     :answer            (if row (find-answer transaction table id action conditions scope-kinds) :doorman/not-found)
      :memberships       (explain-memberships transaction (:person-id asker) row-scopes)
      :actions-in-scopes (vec (for [{:keys [scope-kind scope-id]} row-scopes :when scope-id]
                                {:scope-kind scope-kind :scope-id scope-id
@@ -140,9 +140,9 @@
         held?    (and (uuid? scope-id) (acting/is-held-there? needs action [kind scope-id] actions-by-scope))
         state    (when held? (check/find-state-deny transaction scope-kinds action [kind scope-id]))]
     {:scope  {:says [kind param] :scope-kind kind :scope-id scope-id :held-there? held?}
-     :answer (cond (not held?)                                                 :not-found
-                   (check/find-flag-deny scope-kinds action (:session-flags asker)) :not-allowed
-                   state                                                       :not-allowed
+     :answer (cond (not held?)                                                 :doorman/not-found
+                   (check/find-flag-deny scope-kinds action (:session-flags asker)) :doorman/not-allowed
+                   state                                                       :doorman/not-allowed
                    :else                                                       :allowed)}))
 
 (defn- explain-no-record [transaction {:keys [tables scope-kinds]} asker {:keys [action scope]} params actions-by-scope]
@@ -162,8 +162,8 @@
     {:record            nil
      :scope             (if named (:scope named) {:says scope})
      :answer            (cond named                       (:answer named)
-                              (not-any? :holds? explained) :not-found
-                              flag-deny                   :not-allowed
+                              (not-any? :holds? explained) :doorman/not-found
+                              flag-deny                   :doorman/not-allowed
                               :else                       :allowed)
      :memberships       nil
      :actions-in-scopes (vec (for [[[kind id] actions] (sort-by (comp str key) actions-by-scope)]
@@ -174,8 +174,17 @@
                                           [{:column nil :scope-kind (first scope) :scope-id (:scope-id (:scope named))}]
                                           []))}))
 
+(defn- name-answer
+  "The check's answer: :allowed, or the reason it refuses with, the same
+   as the check's (check/find-refusal-reason): :doorman/signed-out when
+   nobody is signed in."
+  [answer person-id]
+  (if (= :allowed answer) answer (check/find-refusal-reason answer person-id)))
+
 (defn explain-refusal
-  "The explanation, plain data; the options and the asker checked already."
+  "The explanation, plain data; the options and the asker checked already.
+   Its :answer is :allowed or the check's reason, :doorman/not-found,
+   :doorman/not-allowed or :doorman/signed-out."
   [{:keys [pool handlers tables scope-kinds] :as options} asker handler-name params]
   (let [{:keys [action record] :as handler} (get handlers handler-name)]
     (if-not handler
@@ -185,11 +194,12 @@
                                     (fn [transaction]
                                       (let [actions-by-scope (asking/set-asking-with-every-action! transaction scope-kinds asker)]
                                         (asking/set-passing! transaction)
-                                        (merge {:handler handler-name
-                                                :action  action
-                                                :writes? (scope-kinds/does-action-write? scope-kinds action)
-                                                :asker   asker}
-                                               (if record
-                                                 (assoc (explain-record transaction options conditions asker action record params actions-by-scope)
-                                                        :scope nil)
-                                                 (explain-no-record transaction options asker handler params actions-by-scope))))))))))
+                                        (-> (merge {:handler handler-name
+                                                    :action  action
+                                                    :writes? (scope-kinds/does-action-write? scope-kinds action)
+                                                    :asker   asker}
+                                                   (if record
+                                                     (assoc (explain-record transaction options conditions asker action record params actions-by-scope)
+                                                            :scope nil)
+                                                     (explain-no-record transaction options asker handler params actions-by-scope)))
+                                            (update :answer name-answer (:person-id asker))))))))))

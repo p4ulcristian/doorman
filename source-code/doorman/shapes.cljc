@@ -1,7 +1,22 @@
 (ns doorman.shapes
-  "The shapes doorman's messages answer by, the same on both sides: the
-   server's handler answers by them, and the browser reads the answer by
-   them (the app puts them in its shapes by name, as every message's).")
+  "The shapes doorman's messages answer and refuse by, the same on both
+   sides: the server's handler answers by them, and the browser reads the
+   answer by them (the app puts them in its shapes by name, as every
+   message's).")
+
+(def refusals
+  "doorman's own reasons, which its steps refuse a message with, each with
+   the shape of its data, nil for none (bridge's refusal):
+   :doorman/signed-out   nobody is signed in (nobody, a visitor, a token that is wrong, ended
+                         or revoked) and the check refused: whatever the record, so it says
+                         nothing of whether one exists
+   :doorman/not-found    the asker may not reach the record or the scope, nor see it
+   :doorman/not-allowed  the asker may see it but not do this, a session flag or a scope's
+                         state says no, or the request isn't the app's own (another Origin, a
+                         cookie and a token at once)"
+  {:doorman/signed-out  nil
+   :doorman/not-found   nil
+   :doorman/not-allowed nil})
 
 (def my-actions-answer-shape
   "The answer of make-my-actions-handler's handler, \"what may I do?\":

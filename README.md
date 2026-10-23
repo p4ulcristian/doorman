@@ -58,16 +58,29 @@ step's lines say who asked
 | what | `install-access-functions!` | the SQL functions the check and the gates call, and those the app's sentences and denies need (a `:via`'s, a scope state's, the guard's, `doorman."may <action> on <table>"()`), before migrate |
 | what | `put-access-into-handlers` | every handler says where it acts (`:record`, or `:scope` `[kind param]`, `:every-scope-holding-the-action`, `:no-scope`); the check in front of its steps, which run in a transaction where Postgres hears only the handler's action, in those scopes ([why](decisions/2026-10-23-a-handler-says-where-it-acts-and-postgres-hears-only-that.md)) |
 | what | `put-gates-on-tables` | the table maps with their gates, `:gates nil` on the ungated ones, and a record under a record (`:parent`) given its link to the parent and the fill of its carried columns, for cellar |
-| what | `find-leaks` | the leak test, for the app's own tests, by the app's wire and log (`:wire`, `:log`); a `:scope [kind param]` handler asked in each foreign scope (`:scope-kinds`) |
+| what | `find-leaks` | the leak test, for the app's own tests, by the app's wire and log (`:wire`, `:log`); a record or scope it must not reach must be refused `:doorman/not-found` (`:doorman/signed-out` for an asker nobody signed in); a `:scope [kind param]` handler asked in each foreign scope (`:scope-kinds`) |
+| what | `refusals` (both sides; the browser's half has `put-refusals-into-shapes` too) | doorman's reasons, `:doorman/signed-out` `:doorman/not-found` `:doorman/not-allowed`, added to every handler it wraps |
 | what | `run-as-system!` | `(f transaction)` as a named system actor (a webhook's function): the rows the sentences give it by `[:system name]`, the open ones and the ungated tables, nothing else; the app's own role, no role that passes the gates |
 | what | `find-system-leaks` | the leak test of a system actor: the rows it must not reach, read, changed and deleted as it, undone |
 | what | `explain-refusal` | why a message would be refused, as data: the check's answer, the record's scopes, the asker's roles and actions there, each sentence's parts and the denies; read-only, for a REPL |
 
 Nothing has a default: every setting and option is written out; a missing
 one refuses, named, with every other problem at once. A handler writes out
-every key bridge reads (`:steps :params-shape :answer-shape :rate-limit
-:run-steps-in`); doorman wants both shapes real and `:run-steps-in` nil:
+every key bridge reads (`:steps :params-shape :answer-shape :refusals
+:rate-limit :run-steps-in`); doorman wants both shapes real and `:run-steps-in` nil:
 [the decision](decisions/2026-10-22-a-handler-writes-out-mailrooms-keys.md).
+
+The check refuses with doorman's reasons, `doorman/refusals` (bridge's
+named refusals; [why](https://github.com/p4ulcristian/bridge/blob/tidy-up/decisions/2026-10-23-a-refusal-is-a-named-reason-declared-on-its-handler.md)):
+`:doorman/not-found` (the asker may not reach the record or scope, nor see
+it), `:doorman/not-allowed` (they may see it, but not do this; a session
+flag or a scope's state says no; a request from another Origin, or with a
+cookie and a token at once), and `:doorman/signed-out` in place of either
+when nobody is signed in (nobody, a visitor, a wrong, ended or revoked
+token), whatever the record, so it tells nothing of whether one exists.
+doorman adds the three to every handler it wraps; the app never writes
+them. In the browser, `doorman/put-refusals-into-shapes` adds them to the
+app's shapes by name. Each needs its text in the app's catalogs.
 
 ```clojure
 (require '[doorman.api :as doorman]
@@ -139,11 +152,12 @@ every key bridge reads (`:steps :params-shape :answer-shape :rate-limit
                    :record       [:orders :order/id]               ; one row: it acts in that row's shop
                    :params-shape [:map [:order/id :uuid]]
                    :answer-shape [:map [:order/id :uuid]]
+                   :refusals     {:order/archived nil}             ; bridge's: the steps' own reasons; doorman adds its three
                    :rate-limit   nil                               ; bridge's, nil for none
                    :run-steps-in nil                               ; nil: doorman's transaction runs them
                    :steps        [find-order add-order-answer]}    ; they use (:doorman/transaction context)
     :orders/place {:action :orders/edit
-                   :scope  [:shop :order/shop-id]                  ; the shop the param names: held there, or "Not found."
+                   :scope  [:shop :order/shop-id]                  ; the shop the param names: held there, or :doorman/not-found
                    …}
     :orders/mine  {:action :orders/see
                    :scope  :every-scope-holding-the-action         ; or :no-scope: :anyone, :signed-in, [:me …] only
@@ -185,7 +199,7 @@ every key bridge reads (`:steps :params-shape :answer-shape :rate-limit
 (doorman/explain-refusal {:pool app-pool :handlers handlers :tables app-tables :scope-kinds scope-kinds}
                          {:person-id anna :visitor-id nil :session-flags #{}}
                          :orders/one {:order/id order-in-another-shop})
-;=> {:answer :not-found :record {…} :memberships […] :sentences [{… :to {:holds? false :needs :orders/see …}}] :denies […]}
+;=> {:answer :doorman/not-found :record {…} :memberships […] :sentences [{… :to {:holds? false :needs :orders/see …}}] :denies […]}
 
 ;; in the app's tests, with the app's wire (wire.api's make-wire-from-settings) and log (logbook's)
 (is (= [] (doorman/find-leaks ready anna-request {:orders [order-in-another-shop] :shops [another-shop]}

@@ -162,11 +162,13 @@
                                       (run (assoc context :doorman/transaction transaction))))))))
 
 (defn make-my-actions-handler
-  "The handler, bridge's keys written out; the options checked already."
+  "The handler, bridge's keys written out, doorman's reasons its
+   :refusals (the find-session step's); the options checked already."
   [{:keys [tables scope-kinds rate-limit] :as options}]
   (conditions/check-sentences tables scope-kinds)
   {:params-shape [:map {:closed true}]
    :answer-shape answer-shape
+   :refusals     shapes/refusals
    :rate-limit   rate-limit
    :run-steps-in (make-run-steps-in options)
    :steps        [(make-answer-step tables scope-kinds)]})

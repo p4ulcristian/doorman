@@ -9,6 +9,7 @@
   (:require
    [clojure.string :as str]
    [clojure.test :refer [deftest is testing]]
+   [doorman.test-answers :refer [refusal refusal-json read-without-request-ids without-request-id]]
    [cellar.api :as cellar]
    [doorman.api :as doorman]
    [doorman.test-log :refer [log]]
@@ -120,41 +121,41 @@
 (def ^:private handlers
   {:machines/create   {:action :machines/edit :scope [:shop :machine/shop-id]
                        :params-shape [:map [:machine/shop-id :uuid]] :answer-shape [:map]
-                       :rate-limit nil :run-steps-in nil
+                       :refusals {} :rate-limit nil :run-steps-in nil
                        :steps [(answer-with (fn [t data] (cellar/run-statement! t insert-machine data) {}))]}
    ;; names shop A, but its step writes the machine into the shop of another param: a bug, or a crafted param
    :machines/misplace {:action :machines/edit :scope [:shop :shop/id]
                        :params-shape [:map [:shop/id :uuid] [:machine/shop-id :uuid]] :answer-shape [:map]
-                       :rate-limit nil :run-steps-in nil
+                       :refusals {} :rate-limit nil :run-steps-in nil
                        :steps [(answer-with (fn [t data] (cellar/run-statement! t insert-machine data) {}))]}
    :machines/mine     {:action :machines/edit :scope :every-scope-holding-the-action
                        :params-shape [:map] :answer-shape [:vector :uuid]
-                       :rate-limit nil :run-steps-in nil
+                       :refusals {} :rate-limit nil :run-steps-in nil
                        :steps [(answer-with (fn [t _] (mapv :machine/shop-id (cellar/find-rows t (query "SELECT machine__shop_id FROM machines ORDER BY machine__shop_id") {}))))]}
    :shops/rename      {:action :shops/edit :scope [:shop :shop/id]
                        :params-shape [:map [:shop/id :uuid]] :answer-shape [:map [:count :int]]
-                       :rate-limit nil :run-steps-in nil
+                       :refusals {} :rate-limit nil :run-steps-in nil
                        :steps [(answer-with (fn [t data] {:count (cellar/run-statement! t (query "UPDATE shops SET shop__name = 'renamed'") data)}))]}
    :shops/one         {:action :shops/edit :record [:shops :shop/id]
                        :params-shape [:map [:shop/id :uuid]] :answer-shape [:map [:shop/id :uuid]]
-                       :rate-limit nil :run-steps-in nil
+                       :refusals {} :rate-limit nil :run-steps-in nil
                        :steps [(answer-with (fn [_ data] (select-keys data [:shop/id])))]}
    :stations/rename   {:action :orders/edit :record [:workstations :workstation/id]   ; :only #{:read} there
                        :params-shape [:map [:workstation/id :uuid]] :answer-shape [:map]
-                       :rate-limit nil :run-steps-in nil
+                       :refusals {} :rate-limit nil :run-steps-in nil
                        :steps [(answer-with (fn [_ _] {}))]}
    :ledger/one        {:action :orders/edit :record [:ledger-entries :ledger-entry/id]  ; :only #{:read :insert :update} there
                        :params-shape [:map [:ledger-entry/id :uuid]] :answer-shape [:map]
-                       :rate-limit nil :run-steps-in nil
+                       :refusals {} :rate-limit nil :run-steps-in nil
                        :steps [(answer-with (fn [_ _] {}))]}
    :shops/lift        {:action :shops/lift :record [:shops :shop/id]
                        :params-shape [:map [:shop/id :uuid]] :answer-shape [:map [:count :int]]
-                       :rate-limit nil :run-steps-in nil
+                       :refusals {} :rate-limit nil :run-steps-in nil
                        :steps [(answer-with (fn [t data] {:count (cellar/run-statement! t (query "UPDATE shops SET shop__status = 'open' WHERE shop__id = :shop/id") data)}))]}
    :orders/work       {:action :orders/edit :record [:orders :order/id]
                        :params-shape [:map [:order/id :uuid] [:target/shop-id :uuid] [:work (into [:enum] (sort (keys bob-does)))]]
                        :answer-shape [:map [:count :int]]
-                       :rate-limit nil :run-steps-in nil
+                       :refusals {} :rate-limit nil :run-steps-in nil
                        :steps [(answer-with (fn [t data] {:count ((get bob-does (:work data)) t (dissoc data :work))}))]}})
 
 ;; -----------------------------------------------------------------------------
@@ -232,32 +233,32 @@
                                                                                             {:settings settings :tables [] :session-flags #{}}))
                                                              #";"))}})
             ask      (fn [person handler-name params]
-                       (get (bridge/answer-message ready :no-rate-limits (request person) {handler-name params} {:wire wire :log log})
-                            handler-name))
+                       (without-request-id (get (bridge/answer-message ready :no-rate-limits (request person) {handler-name params} {:wire wire :log log})
+                                                handler-name)))
             machines-in #(count-rows owner-pool (str "SELECT 1 AS row__found FROM machines WHERE machine__shop_id = '" % "'"))]
         (try
           (testing "Anna: :machines/edit in A, an Employee in B whose role writes machines too"
             (is (= {} (ask anna :machines/create {:machine/shop-id shop-a})) "in A, where she holds it")
-            (is (= {:error "Not found."} (ask anna :machines/create {:machine/shop-id shop-b}))
+            (is (= (refusal :doorman/not-found) (ask anna :machines/create {:machine/shop-id shop-b}))
                 "in B: refused by the check, before any step")
             (is (= [1 0] [(machines-in shop-a) (machines-in shop-b)])))
 
           (testing "a handler that names A but inserts a row in B is refused by the gate"
-            (is (= {:error "Something went wrong."} (ask anna :machines/misplace {:shop/id shop-a :machine/shop-id shop-b})))
+            (is (= (refusal :bridge/failed) (ask anna :machines/misplace {:shop/id shop-a :machine/shop-id shop-b})))
             (is (= 0 (machines-in shop-b)) "Postgres heard :machines/edit in A only, not her Employee action in B")
             (is (= {} (ask anna :machines/misplace {:shop/id shop-a :machine/shop-id shop-a}))))
 
           (testing ":every-scope-holding-the-action: every shop holding the action, no other"
             (run-sql! owner-pool (str "INSERT INTO machines (machine__shop_id) VALUES ('" shop-b "')"))
             (is (= [(str shop-a) (str shop-a)] (ask anna :machines/mine {})) "B's machine is reached by another action only")
-            (is (= {:error "Not found."} (ask bob :machines/mine {})) "Bob holds it nowhere"))
+            (is (= (refusal :doorman/not-found) (ask bob :machines/mine {})) "Bob holds it nowhere"))
 
           (testing "a sentence on the scope's own row"
             (is (= {:count 1} (ask paul :shops/rename {:shop/id shop-a})) "the Owner renames A, and only A")
             (is (= ["renamed" "C" "B"] (map :shop/name (cellar/find-rows owner-pool (query "SELECT shop__name FROM shops ORDER BY shop__name DESC") {}))))
-            (is (= {:error "Not found."} (ask anna :shops/rename {:shop/id shop-a})) "Anna doesn't hold :shops/edit")
+            (is (= (refusal :doorman/not-found) (ask anna :shops/rename {:shop/id shop-a})) "Anna doesn't hold :shops/edit")
             (is (= {:shop/id (str shop-b)} (ask paul :shops/one {:shop/id shop-b})))
-            (is (= {:error "Not found."} (ask bob :shops/one {:shop/id shop-a}))))
+            (is (= (refusal :doorman/not-found) (ask bob :shops/one {:shop/id shop-a}))))
 
           (testing "Bob, Order clerk in A holding only :orders/edit: what :only lets it do on other tables"
             (let [work #(ask bob :orders/work {:order/id order-a :target/shop-id shop-a :work %})]
@@ -268,23 +269,23 @@
               (is (= {:count 1} (work "read-workstations")) "workstations read")
               (is (= {:count 0} (work "update-workstation")) "and only read")
               (is (= #{"oven" "booth"} (set (map :workstation/name (cellar/find-rows owner-pool (query "SELECT workstation__name FROM workstations") {}))))))
-            (is (= {:error "Something went wrong."} (ask bob :orders/work {:order/id order-a :target/shop-id shop-b :work "insert-ledger"}))
+            (is (= (refusal :bridge/failed) (ask bob :orders/work {:order/id order-a :target/shop-id shop-b :work "insert-ledger"}))
                 "a ledger row in shop B, from shop A's order: refused by the gate")
-            (is (= {:error "Not found."} (ask bob :orders/work {:order/id order-b :target/shop-id shop-b :work "insert-ledger"}))
+            (is (= (refusal :doorman/not-found) (ask bob :orders/work {:order/id order-b :target/shop-id shop-b :work "insert-ledger"}))
                 "shop B's order: refused by the check")
             (is (= 2 (count-rows owner-pool "SELECT 1 AS row__found FROM ledger_entries"))))
 
           (testing "the check respects :only: a record the action only reads there is not allowed, one it doesn't reach not found"
-            (is (= {:error "Not allowed."} (ask bob :stations/rename {:workstation/id station-a}))
+            (is (= (refusal :doorman/not-allowed) (ask bob :stations/rename {:workstation/id station-a}))
                 ":orders/edit reads shop A's workstations, never writes them")
-            (is (= {:error "Not found."} (ask bob :stations/rename {:workstation/id station-b})) "shop B's: no sentence reaches it")
+            (is (= (refusal :doorman/not-found) (ask bob :stations/rename {:workstation/id station-b})) "shop B's: no sentence reaches it")
             (is (= {} (ask bob :ledger/one {:ledger-entry/id ledger-a})) "the ledger: :only lets it write there"))
 
           (testing "a suspended shop's own row is frozen for its own kind's actions"
             (let [shop-c-row #(first (cellar/find-rows owner-pool (query (str "SELECT shop__name, shop__status FROM shops WHERE shop__id = '" shop-c "'")) {}))
                   as-paul    #(doorman/run-as-asker-of-request! app-pool (request paul)
                                                                  {:settings settings :read-only? false :scope-kinds scope-kinds} %)]
-              (is (= {:error "Not allowed."} (ask paul :shops/rename {:shop/id shop-c})) "the check: the Owner can't change its settings")
+              (is (= (refusal :doorman/not-allowed) (ask paul :shops/rename {:shop/id shop-c})) "the check: the Owner can't change its settings")
               (is (= 0 (as-paul #(cellar/run-statement! % (query (str "UPDATE shops SET shop__status = 'open' WHERE shop__id = '" shop-c "'")) {})))
                   "the gate: nor lift the suspension")
               (is (= 1 (as-paul #(count (cellar/find-rows % (query (str "SELECT shop__id FROM shops WHERE shop__id = '" shop-c "'")) {}))))
@@ -300,7 +301,7 @@
             (let [answer (doorman/explain-refusal {:pool app-pool :handlers handlers :tables tables :scope-kinds scope-kinds}
                                                   {:person-id anna :visitor-id nil :session-flags #{}}
                                                   :machines/create {:machine/shop-id shop-b})]
-              (is (= :not-found (:answer answer)))
+              (is (= :doorman/not-found (:answer answer)))
               (is (= {:says [:shop :machine/shop-id] :scope-kind :shop :scope-id shop-b :held-there? false} (:scope answer)))))
 
           (testing "the leak test asks a :scope handler in each foreign scope"

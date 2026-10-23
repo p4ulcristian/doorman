@@ -3,6 +3,7 @@
    they were skipped otherwise."
   (:require
    [clojure.test :refer [deftest is testing]]
+   [doorman.test-answers :refer [refusal refusal-json read-without-request-ids without-request-id]]
    [doorman.api :as doorman]
    [doorman.test-log :as test-log]
    [doorman.test-settings :as test-settings]
@@ -73,7 +74,7 @@
               (is (= [{"person-id" (str anna)}] (mapv #(get % "context") @test-log/lines))
                   "every line a later step writes says who asked")))
           (testing "another site's request is answered with an error, before any work"
-            (is (contains? (:bridge/answer (run-find-session step (make-request set-cookie "https://evil.test"))) :error)))
+            (is (= (refusal :doorman/not-allowed) (:bridge/answer (run-find-session step (make-request set-cookie "https://evil.test"))))))
           (testing "no cookie: nobody"
             (is (nil? (:doorman/person-id (run-find-session step (make-request nil "https://app.test"))))))
           (testing "signed out: the same cookie finds nobody"

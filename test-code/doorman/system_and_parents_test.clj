@@ -7,6 +7,7 @@
   (:require
    [clojure.string :as str]
    [clojure.test :refer [deftest is testing]]
+   [doorman.test-answers :refer [refusal refusal-json read-without-request-ids without-request-id]]
    [cellar.api :as cellar]
    [doorman.api :as doorman]
    [doorman.asking :as asking]
@@ -228,7 +229,7 @@
           (is (= 0 (as-person app-pool anna #(cellar/run-statement! % mark-bounced {:address "seven@shop.test"}))))
           (let [ready (doorman/put-access-into-handlers
                        {:emails/mark {:action :shop-emails/mark-bounced :scope :every-scope-holding-the-action :params-shape [:map] :answer-shape [:map]
-                                      :rate-limit nil :run-steps-in nil
+                                      :refusals {} :rate-limit nil :run-steps-in nil
                                       :steps [{:name :answer :enter #(bridge/add-answer-to-context % {})}]}}
                        {:pool app-pool :tables tables :scope-kinds scope-kinds
                         :find-session-step (doorman/make-find-session-step app-pool {:cookie-name "app_session" :session-days 1
@@ -242,8 +243,8 @@
                                                         :tables [] :session-flags #{}})
                 request {:request-method :post
                          :headers {"origin" "http://app.test" "cookie" (first (str/split set-cookie #";"))}}]
-            (is (= {:error "Not found."}
-                   (:emails/mark (bridge/answer-message ready :no-rate-limits request {:emails/mark {}} {:wire wire :log log}))))))))))
+            (is (= (refusal :doorman/not-found)
+                   (without-request-id (:emails/mark (bridge/answer-message ready :no-rate-limits request {:emails/mark {}} {:wire wire :log log})))))))))))
 
 (deftest a-record-under-a-record-carries-its-parents-columns
   (if-not port
@@ -276,7 +277,7 @@
                             :token-lead "app_" :token-shown-characters 10 :token-longest-days 30}
                   ready    (doorman/put-access-into-handlers
                             {:jobs/one {:action :jobs/see :record [:jobs :job/id] :params-shape [:map [:job/id :uuid]]
-                                        :answer-shape [:map [:job/id :uuid]] :rate-limit nil :run-steps-in nil
+                                        :answer-shape [:map [:job/id :uuid]] :refusals {} :rate-limit nil :run-steps-in nil
                                         :steps [{:name :answer :enter #(bridge/add-answer-to-context % (select-keys (:bridge/message-data %) [:job/id]))}]}}
                             {:pool app-pool :tables tables :scope-kinds scope-kinds
                              :find-session-step (doorman/make-find-session-step app-pool settings)})
@@ -287,8 +288,8 @@
                                                                                                   {:settings settings :tables [] :session-flags #{}}))
                                                                    #";"))}})
                   job-id   (:job/id (job))]
-              (is (= {:error "Not found."} (:jobs/one (bridge/answer-message ready :no-rate-limits (request anna) {:jobs/one {:job/id job-id}}
-                                                                               {:wire wire :log log}))))
+              (is (= (refusal :doorman/not-found) (without-request-id (:jobs/one (bridge/answer-message ready :no-rate-limits (request anna) {:jobs/one {:job/id job-id}}
+                                                                                                           {:wire wire :log log})))))
               (is (= {:job/id (str job-id)} (:jobs/one (bridge/answer-message ready :no-rate-limits (request mia) {:jobs/one {:job/id job-id}}
                                                                           {:wire wire :log log})))
                   "Mia, in shop 9 too, still does")

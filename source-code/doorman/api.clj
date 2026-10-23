@@ -54,6 +54,7 @@
    [doorman.scope-kinds :as scope-kinds]
    [doorman.sessions :as sessions]
    [doorman.settings :as settings]
+   [doorman.shapes :as shapes]
    [doorman.system :as system]
    [doorman.tokens :as tokens]
    [cellar.api :as cellar]))
@@ -203,9 +204,12 @@
      browser never sends the header on its own; a wrong, ended or revoked
      token is nobody;
    - else the session's cookie: a request that changes something must
-     come from the app's own pages (its Origin), or it is answered with an
-     error; the session's person or visitor and its flags;
-   - a request carrying both is answered with an error.
+     come from the app's own pages (its Origin), or it is refused
+     :doorman/not-allowed; the session's person or visitor and its flags;
+   - a request carrying both is refused :doorman/not-allowed.
+
+   A refusal's why is written to the message's log, :info
+   :doorman/request-refused {:because …}.
 
    Then the context gets :doorman/person-id (nil when nobody is signed
    in), :doorman/visitor-id (a visitor session's id, nil when someone is
@@ -331,7 +335,7 @@
 
    The check uses an action's condition: its sentences whose :only allows
    what the action is for (its writes, for an action that writes; else
-   :read), so a record the action only reads there is \"Not allowed.\"; the gates
+   :read), so a record the action only reads there is :doorman/not-allowed; the gates
    use an operation's, each action by the sentences whose :only allows that
    operation on the table, and each person's sentence only while its action
    is the one acted as (doorman.is_acting)."
@@ -376,15 +380,23 @@
      :scope  :every-scope-holding-the-action  a list over every scope where the action is held
      :scope  :no-scope                        only :anyone, :signed-in and [:me …] sentences
 
+   Each also writes out bridge's keys, :refusals among them ({} for none),
+   and never doorman's own reasons (refusals): doorman adds those to every
+   handler's :refusals.
+
    Then each gets the check in front of its steps and runs them in one
-   transaction that tells Postgres who is asking. The check: a record its
-   asker may not reach answers \"Not found.\", one they may see but not act
-   on \"Not allowed.\"; a :scope [kind param] whose scope doesn't hold the
-   action (a membership above it counts) \"Not found.\", one a session flag
-   or the scope's state denies \"Not allowed.\"; :every-scope-holding-the-action
-   runs for an asker who can have the action at all, :no-scope for one an
-   open sentence gives it to (\"Not found.\"), and not when a session flag
-   denies it (\"Not allowed.\"). Let through, the steps' Postgres hears only
+   transaction that tells Postgres who is asking. The check refuses (by
+   bridge's refuse): a record its asker may not reach :doorman/not-found,
+   one they may see but not act on :doorman/not-allowed; a :scope [kind
+   param] whose scope doesn't hold the action (a membership above it
+   counts) :doorman/not-found, one a session flag or the scope's state
+   denies :doorman/not-allowed; :every-scope-holding-the-action runs for
+   an asker who can have the action at all, :no-scope for one an open
+   sentence gives it to (:doorman/not-found), and not when a session flag
+   denies it (:doorman/not-allowed). Refused while nobody is signed in
+   (nobody, a visitor, a wrong, ended or revoked token), the reason is
+   :doorman/signed-out, whatever the record: so it tells nothing of
+   whether one exists. Let through, the steps' Postgres hears only
    the handler's action, in the scopes it acts in: the named one; the
    record's (its columns', and the kinds its action reaches through a
    [:member <kind of one scope>] or a :via); every one holding it; none. A
@@ -424,6 +436,15 @@
                   (assoc table-map :gates nil))
                 (parents/put-link-and-fill-on-table tables-by-key)))
           tables)))
+
+(def refusals
+  "doorman's own reasons, each with its data's shape (all nil: none), the
+   same on both sides: :doorman/signed-out, nobody is signed in and the
+   check refused; :doorman/not-found; :doorman/not-allowed (the check, or
+   a request that isn't the app's own). put-access-into-handlers adds them
+   to every handler's :refusals, make-my-actions-handler's has them; each
+   needs its text in the app's catalogs."
+  shapes/refusals)
 
 (def my-actions-answer-shape
   "The answer of make-my-actions-handler's handler: every scope the
@@ -478,7 +499,8 @@
                               {:person-id anna :visitor-id nil :session-flags #{}}
                               :orders/edit-one {:order/id order-99})
      ;=> {:handler :orders/edit-one :action :orders/edit :writes? true :asker {…}
-     ;    :answer :not-found                                  ; what the check answers: :allowed :not-allowed :not-found
+     ;    :answer :doorman/not-found                          ; :allowed, or the check's reason: :doorman/not-found
+     ;                                                        ; :doorman/not-allowed :doorman/signed-out
      ;    :record {:table :orders :id #uuid \"…\" :exists? true
      ;             :scopes [{:column :order/shop-id :scope-kind :shop :scope-id #uuid \"…9\"}]}
      ;    :memberships [{:scope-kind :company :scope-id #uuid \"…\" :role \"Director\"}]   ; there and above
@@ -524,7 +546,7 @@
    actions, the visitor, the session's flags: every action the person
    holds counts, in every scope holding it (no handler narrows it to one
    action and its scopes). A request the step refuses throws
-   :doorman/refused-request. options, every key required: {:settings
+   :doorman/refused-request, with its :reason. options, every key required: {:settings
    settings :read-only? false :scope-kinds scope-kinds} (the checked
    scope kinds). A transaction handed in is refused.
 
@@ -549,8 +571,9 @@
    put-access-into-handlers) asked by the person of request (signed in to
    one scope) with foreign-ids, the ids of rows and scopes she must not
    reach, by table, {:orders [id …] :shops [id …]}. A handler with a
-   :record must answer \"Not found.\" for each of its table's; one with
-   :scope [kind param] must answer \"Not found.\" with each id of its kind's
+   :record must refuse :doorman/not-found for each of its table's
+   (:doorman/signed-out when nobody is signed in in request); one with
+   :scope [kind param] must refuse the same with each id of its kind's
    :table (the options' :scope-kinds) in its param; any other must give
    none of them back. Its other params come from its :params-shape, by
    malli's generator, with the options' :seed and :size. Each message is

@@ -14,7 +14,7 @@
            access-tables check-scope-kinds does-action-only-read? add-scope! add-role! add-membership! remove-membership!
            list-actions-of-person make-sql-conditions install-access-functions!
            put-access-into-handlers put-gates-on-tables find-leaks explain-refusal
-           my-actions-answer-shape make-my-actions-handler
+           my-actions-answer-shape make-my-actions-handler refusals
            ;; a named system actor
            run-as-system! find-system-leaks}
          (set (keys (ns-publics 'doorman.api))))))

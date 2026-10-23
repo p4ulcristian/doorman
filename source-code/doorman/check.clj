@@ -21,16 +21,20 @@
    when the action only reads), tell Postgres who is asking
    (doorman.asking), with every action, for the check:
    - :record: may this person do the action on the record? Not, and they
-     can't see it either: \"Not found.\" (nothing tells them it exists);
-     not, but they can see it: \"Not allowed.\".
+     can't see it either: :doorman/not-found (nothing tells them it
+     exists); not, but they can see it: :doorman/not-allowed.
    - :scope [kind param]: is the action held in the scope the param names
-     (a membership above it counts)? Not: \"Not found.\"; a session flag or
-     the scope's state denying it: \"Not allowed.\".
+     (a membership above it counts)? Not: :doorman/not-found; a session
+     flag or the scope's state denying it: :doorman/not-allowed.
    - :scope :every-scope-holding-the-action: can the asker have the action
      at all, open to them by a sentence (anyone, anyone signed in, a
      visitor) or held somewhere? :scope :no-scope: by an open sentence
-     only. Not: \"Not found.\"; a session flag denying it: \"Not allowed.\".
-   Refused, no step runs. Let through, Postgres is told again, in the same
+     only. Not: :doorman/not-found; a session flag denying it:
+     :doorman/not-allowed.
+   Refused while nobody is signed in, the reason is :doorman/signed-out,
+   whichever of the two it was: a signed-out asker learns nothing of the
+   record. Refused, no step runs (bridge's refuse; doorman adds its
+   reasons to every handler's :refusals). Let through, Postgres is told again, in the same
    transaction: the handler's action alone, in the scopes it acts in
    (doorman.acting), and the handler's steps run with :doorman/transaction
    in the context. The gates decide which rows."
@@ -42,11 +46,20 @@
    [doorman.conditions :as conditions]
    [doorman.scope-kinds :as scope-kinds]
    [doorman.sentences :as sentences]
+   [doorman.shapes :as shapes]
    [bridge.api :as bridge]))
 
-(def ^:private not-found {:error "Not found."})
+(def ^:private not-found :doorman/not-found)
 
-(def ^:private not-allowed {:error "Not allowed."})
+(def ^:private not-allowed :doorman/not-allowed)
+
+(defn find-refusal-reason
+  "The reason the check refuses with: :doorman/signed-out when nobody is
+   signed in, whatever the check found (so it tells nothing of the
+   record), else what it found, :doorman/not-found or
+   :doorman/not-allowed."
+  [found person-id]
+  (if (nil? person-id) :doorman/signed-out found))
 
 (defn- find-where-problems
   "Where the handler acts: exactly one of :record and :scope, each as
@@ -79,20 +92,24 @@
       [(str handler-name ": :scope is [kind param], :every-scope-holding-the-action or :no-scope, not " (pr-str scope))])))
 
 (defn- find-problems-of-handler
-  "Doorman's own keys, and bridge's written out: :steps, :rate-limit
-   (nil for none) and :run-steps-in, nil, since doorman runs the steps in
-   its transaction and an app's own would be replaced unseen. Both shapes
-   must be real ones: the leak test makes params from :params-shape, and
-   an answer leaves only as :answer-shape allows. Where it acts: exactly
-   one of :record and :scope."
-  [setup [handler-name {:keys [action params-shape answer-shape run-steps-in] :as handler}]]
+  "Doorman's own keys, and bridge's written out: :steps, :refusals ({} for
+   none; never doorman's own, which doorman adds), :rate-limit (nil for
+   none) and :run-steps-in, nil, since doorman runs the steps in its
+   transaction and an app's own would be replaced unseen. Both shapes must
+   be real ones: the leak test makes params from :params-shape, and an
+   answer leaves only as :answer-shape allows. Where it acts: exactly one
+   of :record and :scope."
+  [setup [handler-name {:keys [action params-shape answer-shape run-steps-in refusals] :as handler}]]
   (concat
    (when-not action [(str handler-name " has no :action")])
    (when-not params-shape [(str handler-name " has no :params-shape")])
    (when-not answer-shape [(str handler-name " has no :answer-shape")])
-   (for [k [:steps :rate-limit :run-steps-in]
+   (for [k [:steps :refusals :rate-limit :run-steps-in]
          :when (not (contains? handler k))]
-     (str handler-name " has no " k " (nil written out where nothing applies)"))
+     (str handler-name " has no " k " (nil written out where nothing applies, {} for no :refusals)"))
+   (for [reason (keys shapes/refusals)
+         :when (and (map? refusals) (contains? refusals reason))]
+     (str handler-name " declares " reason ", doorman's own: doorman adds it to every handler it wraps"))
    (when run-steps-in [(str handler-name " has its own :run-steps-in; doorman runs the steps in its transaction, so it must be nil")])
    (find-where-problems handler-name handler setup)))
 
@@ -254,7 +271,7 @@
                                                   (vector? scope) (check-named-scope prepared handler context)
                                                   :else           (check-ways prepared handler context))]
                 (if answer
-                  (bridge/add-answer-to-context context answer)
+                  (bridge/refuse context (find-refusal-reason answer person-id) nil)
                   ;; from here on, Postgres hears only the handler's action, in its scopes
                   (do (asking/set-asking! transaction {:person-id person-id :visitor-id visitor-id :session-flags session-flags}
                                           (acting/make-telling needs action scopes actions))
@@ -282,9 +299,10 @@
                                                     :doorman/actions actions)))))))))
 
 (defn put-access-into-handlers
-  "Every handler checked, then given the check in front of its steps and the
-   running of them in a transaction that knows who is asking. setup:
-   {:pool :tables :scope-kinds :find-session-step :conditions}."
+  "Every handler checked, then given the check in front of its steps, the
+   running of them in a transaction that knows who is asking, and
+   doorman's reasons in its :refusals. setup: {:pool :tables :scope-kinds
+   :find-session-step :conditions}."
   [handlers {:keys [tables scope-kinds] :as setup}]
   (check-handlers handlers setup)
   (let [setup (assoc setup :needs (acting/find-needs tables scope-kinds))]
@@ -292,4 +310,5 @@
                  (fn [handler]
                    (-> handler
                        (update :steps #(into [(make-check-step setup handler)] %))
+                       (update :refusals merge shapes/refusals)
                        (assoc :run-steps-in (make-run-steps-in setup handler)))))))

@@ -10,6 +10,7 @@
   (:require
    [clojure.string :as str]
    [clojure.test :refer [deftest is testing]]
+   [doorman.test-answers :refer [refusal refusal-json read-without-request-ids without-request-id]]
    [cellar.api :as cellar]
    [doorman.api :as doorman]
    [doorman.asking :as asking]
@@ -138,18 +139,18 @@
 
 (def ^:private handlers
   {:orders/one    {:action :orders/see :record [:orders :order/id] :params-shape [:map [:order/id :uuid]]
-                   :answer-shape [:map [:order/id :uuid]] :rate-limit nil :run-steps-in nil
+                   :answer-shape [:map [:order/id :uuid]] :refusals {} :rate-limit nil :run-steps-in nil
                    :steps [(answer-with #(select-keys (:bridge/message-data %) [:order/id]))]}
    :orders/edit   {:action :orders/edit :record [:orders :order/id] :params-shape [:map [:order/id :uuid]]
-                   :answer-shape [:map [:order/id :uuid]] :rate-limit nil :run-steps-in nil
+                   :answer-shape [:map [:order/id :uuid]] :refusals {} :rate-limit nil :run-steps-in nil
                    :steps [(answer-with #(do (cellar/run-statement! (:doorman/transaction %) update-status (:bridge/message-data %))
                                              (select-keys (:bridge/message-data %) [:order/id])))]}
    :orders/note   {:action :orders/note :record [:orders :order/id] :params-shape [:map [:order/id :uuid]]
-                   :answer-shape [:map [:order/id :uuid]] :rate-limit nil :run-steps-in nil
+                   :answer-shape [:map [:order/id :uuid]] :refusals {} :rate-limit nil :run-steps-in nil
                    :steps [(answer-with #(select-keys (:bridge/message-data %) [:order/id]))]}
-   :orders/all    {:action :orders/see :scope :every-scope-holding-the-action :params-shape [:map] :answer-shape [:vector :uuid] :rate-limit nil :run-steps-in nil
+   :orders/all    {:action :orders/see :scope :every-scope-holding-the-action :params-shape [:map] :answer-shape [:vector :uuid] :refusals {} :rate-limit nil :run-steps-in nil
                    :steps [(answer-with #(mapv :order/id (cellar/find-rows (:doorman/transaction %) find-all-orders {})))]}
-   :orders/place  {:action :orders/edit :scope [:shop :order/shop-id] :params-shape [:map [:order/shop-id :uuid]] :answer-shape [:map] :rate-limit nil
+   :orders/place  {:action :orders/edit :scope [:shop :order/shop-id] :params-shape [:map [:order/shop-id :uuid]] :answer-shape [:map] :refusals {} :rate-limit nil
                    :run-steps-in nil
                    :steps [(answer-with #(do (cellar/run-statement! (:doorman/transaction %) insert-order (:bridge/message-data %)) {}))]}})
 
@@ -210,8 +211,8 @@
 (defn- ask
   "A message's answer as over http (JSON data), by the app's wire."
   [ready cookie handler-name params]
-  (get (bridge/answer-message ready :no-rate-limits (request-of cookie) {handler-name params} {:wire wire :log log})
-       handler-name))
+  (without-request-id (get (bridge/answer-message ready :no-rate-limits (request-of cookie) {handler-name params} {:wire wire :log log})
+                           handler-name)))
 
 (defn- texts [answer] (set (map str (filter #(or (uuid? %) (string? %)) (tree-seq coll? seq answer)))))
 
@@ -241,8 +242,8 @@
 (defn- refused? [f]
   (try (f) false (catch Exception e (boolean (re-find #"row-level security|violates|permission" (str (.getMessage e) (some-> e .getCause .getMessage)))))))
 
-(def ^:private not-found {:error "Not found."})
-(def ^:private not-allowed {:error "Not allowed."})
+(def ^:private not-found (refusal :doorman/not-found))
+(def ^:private not-allowed (refusal :doorman/not-allowed))
 
 ;; -----------------------------------------------------------------------------
 ;; Pure checks
@@ -378,7 +379,7 @@
 
           (testing "a visitor's rows: theirs alone, by the check and the gates"
             (is (= #{(str order-v)} (texts (ask ready v1-cookie :orders/one {:order/id order-v}))))
-            (is (= not-found (ask ready v2-cookie :orders/one {:order/id order-v})) "another visitor")
+            (is (= (refusal :doorman/signed-out) (ask ready v2-cookie :orders/one {:order/id order-v})) "another visitor: signed out, as for any record")
             (is (= not-found (ask ready (sign-in eve #{}) :orders/one {:order/id order-v})) "a signed-in stranger")
             (is (= #{(str order-v)} (texts (ask ready v1-cookie :orders/all {}))))
             (is (= #{order-v} (orders-seen-by app-pool {:visitor-id v1})))
@@ -417,20 +418,20 @@
 
           (testing "explain-refusal"
             (let [answer (explain {:person-id anna} :orders/edit {:order/id order-99})]
-              (is (= :not-found (:answer answer)))
+              (is (= :doorman/not-found (:answer answer)))
               (is (= {:table :orders :id order-99 :exists? true :scopes [{:column :order/shop-id :scope-kind :shop :scope-id shop-9}]}
                      (:record answer)))
               (is (= {:says [:member :order/shop-id] :holds? false :scope-kind :shop :scope-id shop-9 :needs :orders/edit :held-there? false}
                      (:to (first (:sentences answer)))))
               (is (= [] (:memberships answer)) "Anna is in no scope of order 99"))
             (let [answer (explain {:person-id anna :session-flags #{:impersonated}} :orders/edit {:order/id order-42})]
-              (is (= :not-allowed (:answer answer)))
+              (is (= :doorman/not-allowed (:answer answer)))
               (is (true? (:holds? (first (:sentences answer)))) "her role holds it there")
               (is (= [{:scope-kind :shop :deny {:deny :writes :session :impersonated} :says-no? true}
                       {:scope-kind :shop :deny {:deny :writes :when [:= :shop/status "suspended"]} :says-no? false :scope-ids []}]
                      (:denies answer))))
             (let [answer (explain {:person-id gus} :orders/edit {:order/id order-80})]
-              (is (= :not-allowed (:answer answer)))
+              (is (= :doorman/not-allowed (:answer answer)))
               (is (= [shop-8] (:scope-ids (second (:denies answer))))))
             (let [answer (explain {:person-id dora} :orders/one {:order/id order-42})]
               (is (= :allowed (:answer answer)))
@@ -440,7 +441,7 @@
               (is (= {:says (:via (last (:access orders))) :holds? false} (:via (last (:sentences answer))))
                   "the via's related row isn't there for her"))
             (let [answer (explain {} :orders/all {})]
-              (is (= :not-found (:answer answer)) "nobody can have orders/see")
+              (is (= :doorman/signed-out (:answer answer)) "nobody can have orders/see; signed out, as the check says")
               (is (= #{:signed-in :visitor [:holds :orders/see] [:holds :platform/support] [:holds :agreements/see]}
                      (set (map :way (:sentences answer)))))))
 

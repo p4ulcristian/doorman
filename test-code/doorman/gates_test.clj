@@ -6,6 +6,7 @@
   (:require
    [clojure.string :as str]
    [clojure.test :refer [deftest is testing]]
+   [doorman.test-answers :refer [refusal refusal-json read-without-request-ids without-request-id]]
    [doorman.api :as doorman]
    [doorman.test-settings :as test-settings]
    [cellar.api :as cellar]
@@ -60,18 +61,18 @@
 
 (def ^:private handlers
   {:orders/all   {:action :orders/see :scope :every-scope-holding-the-action :params-shape [:map] :answer-shape [:vector :uuid]
-                  :rate-limit nil :run-steps-in nil
+                  :refusals {} :rate-limit nil :run-steps-in nil
                   :steps  [{:name  :answer-all-orders
                             :enter #(bridge/add-answer-to-context
                                      % (mapv :order/id (cellar/find-rows (:doorman/transaction %) find-all-orders {})))}]}
    :orders/sneak {:action :orders/see :scope [:shop :order/shop-id] :params-shape [:map [:order/shop-id :uuid]] :answer-shape [:map]
-                  :rate-limit nil :run-steps-in nil
+                  :refusals {} :rate-limit nil :run-steps-in nil
                   :steps  [{:name  :insert-order-while-only-seeing
                             :enter #(do (cellar/run-statement! (:doorman/transaction %) insert-order
                                                                  (:bridge/message-data %))
                                         (bridge/add-answer-to-context % {}))}]}
    :orders/place {:action :orders/edit :scope [:shop :order/shop-id] :params-shape [:map [:order/shop-id :uuid]] :answer-shape [:map]
-                  :rate-limit nil :run-steps-in nil
+                  :refusals {} :rate-limit nil :run-steps-in nil
                   :steps  [{:name  :insert-order
                             :enter #(do (cellar/run-statement! (:doorman/transaction %) insert-order
                                                             (:bridge/message-data %))
@@ -159,17 +160,17 @@
           (testing "a query with no WHERE: Postgres returns only the asker's rows"
             (is (= (str "{\"orders/all\":[\"" order-42 "\"]}") (ask (:port server) (cookie anna) "{\"orders/all\":{}}")))
             (is (= (str "{\"orders/all\":[\"" order-99 "\"]}") (ask (:port server) (cookie bob) "{\"orders/all\":{}}")))
-            (is (= "{\"orders/all\":{\"error\":\"Not found.\"}}" (ask (:port server) nil "{\"orders/all\":{}}"))
-                "nobody can hold orders/see: the list doesn't run at all"))
+            (is (= (refusal-json "orders/all" :doorman/signed-out) (read-without-request-ids (ask (:port server) nil "{\"orders/all\":{}}")))
+                "nobody signed in can hold orders/see: the list doesn't run at all"))
           (testing "a new row in another shop is refused by the check: the handler acts in the shop it names"
-            (is (= "{\"orders/place\":{\"error\":\"Not found.\"}}"
-                   (ask (:port server) (cookie anna) (str "{\"orders/place\":{\"order/shop-id\":\"" shop-9 "\"}}"))))
+            (is (= (refusal-json "orders/place" :doorman/not-found)
+                   (read-without-request-ids (ask (:port server) (cookie anna) (str "{\"orders/place\":{\"order/shop-id\":\"" shop-9 "\"}}")))))
             (is (= "{\"orders/place\":{}}"
                    (ask (:port server) (cookie anna) (str "{\"orders/place\":{\"order/shop-id\":\"" shop-7 "\"}}")))
                 "in her own shop: fine"))
           (testing "an action that only reads runs read-only: a write in its steps is refused"
-            (is (= "{\"orders/sneak\":{\"error\":\"Something went wrong.\"}}"
-                   (ask (:port server) (cookie anna) (str "{\"orders/sneak\":{\"order/shop-id\":\"" shop-7 "\"}}")))
+            (is (= (refusal-json "orders/sneak" :bridge/failed)
+                   (read-without-request-ids (ask (:port server) (cookie anna) (str "{\"orders/sneak\":{\"order/shop-id\":\"" shop-7 "\"}}"))))
                 "Anna may edit shop 7's orders, but orders/see only reads"))
           (testing "run-as-asker-of-request!: a transaction as the request's asker, outside a message, held by the same gates"
             (let [as (fn [request read-only? f]
@@ -196,7 +197,7 @@
               (is (= [] (doorman/find-leaks (select-keys ready [:orders/all]) anna-request {:orders [order-99]} {:wire wire :log log :scope-kinds scope-kinds :seed 7 :size 30})))
               (testing "and a handler that reads past the gates is caught"
                 (let [leaky {:orders/leaky {:action :orders/see :scope :every-scope-holding-the-action :params-shape [:map] :answer-shape [:vector :uuid]
-                                            :rate-limit nil :run-steps-in nil
+                                            :refusals {} :rate-limit nil :run-steps-in nil
                                             :steps [{:name  :read-with-the-owner
                                                      :enter #(bridge/add-answer-to-context
                                                               % (mapv :order/id (cellar/find-rows owner-pool find-all-orders {})))}]}}

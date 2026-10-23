@@ -7,6 +7,7 @@
   (:require
    [clojure.string :as str]
    [clojure.test :refer [deftest is testing]]
+   [doorman.test-answers :refer [refusal refusal-json read-without-request-ids without-request-id]]
    [cellar.api :as cellar]
    [doorman.api :as doorman]
    [doorman.cookie :as cookie]
@@ -60,16 +61,16 @@
 (def ^:private handlers
   {:orders/place    {:action :orders/edit :scope [:shop :order/shop-id]
                      :params-shape [:map [:order/shop-id :uuid]] :answer-shape [:map]
-                     :rate-limit nil :run-steps-in nil
+                     :refusals {} :rate-limit nil :run-steps-in nil
                      :steps [(answer-with (fn [t data] (cellar/run-statement! t insert-order data) {}))]}
    ;; names shop A, but writes the order into the shop of another param: a bug, or a crafted param
    :orders/misplace {:action :orders/edit :scope [:shop :shop/id]
                      :params-shape [:map [:shop/id :uuid] [:order/shop-id :uuid]] :answer-shape [:map]
-                     :rate-limit nil :run-steps-in nil
+                     :refusals {} :rate-limit nil :run-steps-in nil
                      :steps [(answer-with (fn [t data] (cellar/run-statement! t insert-order (select-keys data [:order/shop-id])) {}))]}
    :orders/all      {:action :orders/see :scope :every-scope-holding-the-action
                      :params-shape [:map] :answer-shape [:vector :uuid]
-                     :rate-limit nil :run-steps-in nil
+                     :refusals {} :rate-limit nil :run-steps-in nil
                      :steps [(answer-with (fn [t _] (mapv :order/shop-id (cellar/find-rows t (query "SELECT order__shop_id FROM orders") {}))))]}})
 
 ;; -----------------------------------------------------------------------------
@@ -136,8 +137,8 @@
             bearer     (fn [text] {:request-method :post :headers {"authorization" (str "Bearer " text)}})
             make!      (fn [request name days] (doorman/make-token! app-pool request {:settings settings :name name :ends-at (in-days days)}))
             ask        (fn [request handler-name params]
-                         (get (bridge/answer-message ready :no-rate-limits request {handler-name params} {:wire wire :log log})
-                              handler-name))
+                         (without-request-id (get (bridge/answer-message ready :no-rate-limits request {handler-name params} {:wire wire :log log})
+                                                  handler-name)))
             asker-of   (fn [request]
                          (let [context (bridge/run-steps-until-answered [step] {:bridge/request request :bridge/log log})]
                            (or (:bridge/answer context)
@@ -167,16 +168,16 @@
           (testing "a wrong token is nobody; a request with a cookie and a token is refused"
             (is (= [nil nil #{}] (asker-of (bearer (str (:text anna-token) "x")))))
             (is (= [nil nil #{}] (asker-of (bearer "shop_nothing"))))
-            (is (= {:error "A request carries a session's cookie or a token, not both."}
+            (is (= (refusal :doorman/not-allowed)
                    (asker-of (assoc-in (browser bob) [:headers "authorization"] (str "Bearer " (:text anna-token))))))
-            (is (= {:error "A request carries a session's cookie or a token, not both."}
+            (is (= (refusal :doorman/not-allowed)
                    (ask (assoc-in (browser bob) [:headers "authorization"] (str "Bearer " (:text anna-token))) :orders/place {:order/shop-id shop-a}))
                 "nothing runs"))
 
           (testing "held by the same check and gates as her browser's calls"
             (is (= {} (ask (bearer (:text anna-token)) :orders/place {:order/shop-id shop-a})) "in A, where she is Staff")
-            (is (= {:error "Not found."} (ask (bearer (:text anna-token)) :orders/place {:order/shop-id shop-b})) "in B: the check")
-            (is (= {:error "Something went wrong."} (ask (bearer (:text anna-token)) :orders/misplace {:shop/id shop-a :order/shop-id shop-b}))
+            (is (= (refusal :doorman/not-found) (ask (bearer (:text anna-token)) :orders/place {:order/shop-id shop-b})) "in B: the check")
+            (is (= (refusal :bridge/failed) (ask (bearer (:text anna-token)) :orders/misplace {:shop/id shop-a :order/shop-id shop-b}))
                 "a handler acting in A that writes into B: the gate")
             (is (= [1 0] [(orders-in shop-a) (orders-in shop-b)]))
             (run-sql! owner-pool (str "INSERT INTO orders (order__shop_id) VALUES ('" shop-b "')"))
@@ -190,7 +191,7 @@
             (is (= {:type :doorman/no-token-for-asker :reason :session-flags}
                    (refusal-of #(make! {:request-method :post :headers {"origin" "http://app.test" "cookie" (cookie-of anna #{:impersonated})}} "x" 1)))
                 "an impersonating admin's token would shed the flag's deny")
-            (is (= {:type :doorman/refused-request} (refusal-of #(make! (assoc-in (browser anna) [:headers "origin"] "https://evil.test") "x" 1)))
+            (is (= {:type :doorman/refused-request :reason :doorman/not-allowed} (refusal-of #(make! (assoc-in (browser anna) [:headers "origin"] "https://evil.test") "x" 1)))
                 "another site's request")
             (is (= {:type :doorman/bad-token-end} (refusal-of #(make! (browser anna) "x" 91))) "past :token-longest-days, 90")
             (is (= {:type :doorman/bad-token-end} (refusal-of #(make! (browser anna) "x" -1))) "in the past")
@@ -226,7 +227,7 @@
             (cellar/run-in-transaction! owner-pool {:read-only? false}
                                         #(doorman/remove-membership! % [:shop shop-a] anna))
             (is (= [anna nil #{}] (asker-of (bearer (:text anna-token)))) "still her token")
-            (is (= {:error "Not found."} (ask (bearer (:text anna-token)) :orders/place {:order/shop-id shop-a}))
+            (is (= (refusal :doorman/not-found) (ask (bearer (:text anna-token)) :orders/place {:order/shop-id shop-a}))
                 "but A is not hers: memberships are read on every call")
             (let [ended (doorman/sign-out-everywhere! app-pool anna)]
               (is (= 1 (:tokens ended)) "her one token left ended")

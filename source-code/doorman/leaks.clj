@@ -2,10 +2,12 @@
   "The leak test: every handler, asked by a person of one scope with the ids
    of another scope's rows, must not give any of them back.
 
-   A handler with a :record is asked for each foreign row: it must answer
-   \"Not found.\". A handler with :scope [kind param] is asked for each
-   foreign scope, the ids given under the kind's :table (the options'
-   :scope-kinds say which), in its param: it must answer \"Not found.\" (a
+   A handler with a :record is asked for each foreign row: it must refuse
+   :doorman/not-found (or, when nobody is signed in, :doorman/signed-out,
+   which the check answers whatever the record). A handler with :scope
+   [kind param] is asked for each foreign scope, the ids given under the
+   kind's :table (the options' :scope-kinds say which), in its param: it
+   must refuse the same (a
    handler that would act in a shop where the asker doesn't hold its
    action is a leak, whatever else she holds there). Any other (a list) is
    asked once: its answer must hold none of the foreign ids. The other params come from the
@@ -29,16 +31,22 @@
 (defn- ask [handlers request handler-name params {:keys [wire log]}]
   (get (bridge/answer-message handlers :no-rate-limits request {handler-name params} {:wire wire :log log}) handler-name))
 
+(defn- is-not-found?
+  "Refused with a reason that tells nothing of the record: :doorman/not-found,
+   or :doorman/signed-out, which a signed-out asker gets for any record."
+  [answer]
+  (contains? #{:doorman/not-found :doorman/signed-out} (:bridge/refused answer)))
+
 (defn- check-record-handler [handlers request [handler-name {[table-key id-key] :record :as handler}] foreign-ids options]
   (for [id (get foreign-ids table-key)
         :let [answer (ask handlers request handler-name (assoc (generate-params handler options) id-key id) options)]
-        :when (not= {:error "Not found."} answer)]
+        :when (not (is-not-found? answer))]
     {:handler handler-name :asked-for id :answer answer}))
 
 (defn- check-scope-handler [handlers request [handler-name {[kind param] :scope :as handler}] foreign-ids {:keys [scope-kinds] :as options}]
   (for [id (get foreign-ids (get-in scope-kinds [kind :table]))
         :let [answer (ask handlers request handler-name (assoc (generate-params handler options) param id) options)]
-        :when (not= {:error "Not found."} answer)]
+        :when (not (is-not-found? answer))]
     {:handler handler-name :asked-in [kind id] :answer answer}))
 
 (defn- check-list-handler [handlers request [handler-name handler] foreign-ids options]

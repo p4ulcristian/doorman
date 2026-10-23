@@ -4,7 +4,9 @@
   (:require
    [clojure.string :as str]
    [clojure.test :refer [deftest is testing]]
+   [doorman.test-answers :refer [refusal refusal-json read-without-request-ids without-request-id]]
    [doorman.api :as doorman]
+   [doorman.check :as check]
    [doorman.test-settings :as test-settings]
    [cellar.api :as cellar]
    [doorman.test-log :as test-log :refer [log]]
@@ -65,6 +67,7 @@
                    :scope        :every-scope-holding-the-action
                    :params-shape [:map]
                    :answer-shape [:map]
+                   :refusals     {}
                    :rate-limit   nil
                    :run-steps-in nil
                    :steps        [{:name :remind :enter #(bridge/add-answer-to-context % {})}]}
@@ -72,6 +75,7 @@
                 :record       [:orders :order/id]
                 :params-shape [:map [:order/id :uuid]]
                 :answer-shape [:map [:order/id :uuid]]
+                :refusals     {}
                 :rate-limit   nil
                 :run-steps-in nil
                 :steps        [answer-the-order]}})
@@ -131,11 +135,33 @@
                         :x/z (assoc (:orders/remind handlers) :run-steps-in (fn [run context] (run context)))}
                        {:pool (Object.) :tables [shops orders] :scope-kinds scope-kinds :find-session-step no-session-step})
                       (catch clojure.lang.ExceptionInfo e (:problems (ex-data e))))]
-    (is (= [":x/y has no :rate-limit (nil written out where nothing applies)"
-            ":x/y has no :run-steps-in (nil written out where nothing applies)"
+    (is (= [":x/y has no :rate-limit (nil written out where nothing applies, {} for no :refusals)"
+            ":x/y has no :run-steps-in (nil written out where nothing applies, {} for no :refusals)"
             ":x/z has its own :run-steps-in; doorman runs the steps in its transaction, so it must be nil"]
            problems)
         "every problem at once")))
+
+(deftest doorman-adds-its-reasons-to-every-handler
+  (let [ready (doorman/put-access-into-handlers
+               (assoc-in handlers [:orders/one :refusals] {:order/archived nil})
+               {:pool (Object.) :tables [shops orders] :scope-kinds scope-kinds :find-session-step no-session-step})]
+    (is (= {:doorman/signed-out nil :doorman/not-found nil :doorman/not-allowed nil} (:refusals (:orders/remind ready))))
+    (is (= #{:order/archived :doorman/signed-out :doorman/not-found :doorman/not-allowed} (set (keys (:refusals (:orders/one ready)))))
+        "beside the handler's own"))
+  (let [problems (try (doorman/put-access-into-handlers
+                       {:x/y (dissoc (:orders/remind handlers) :refusals)
+                        :x/z (assoc (:orders/remind handlers) :refusals {:doorman/not-found nil})}
+                       {:pool (Object.) :tables [shops orders] :scope-kinds scope-kinds :find-session-step no-session-step})
+                      (catch clojure.lang.ExceptionInfo e (:problems (ex-data e))))]
+    (is (= [":x/y has no :refusals (nil written out where nothing applies, {} for no :refusals)"
+            ":x/z declares :doorman/not-found, doorman's own: doorman adds it to every handler it wraps"]
+           problems)
+        ":refusals written out; doorman's own never the app's")))
+
+(deftest signed-out-says-nothing-of-the-record
+  (is (= [:doorman/signed-out :doorman/signed-out :doorman/not-found :doorman/not-allowed]
+         [(check/find-refusal-reason :doorman/not-found nil) (check/find-refusal-reason :doorman/not-allowed nil)
+          (check/find-refusal-reason :doorman/not-found anna) (check/find-refusal-reason :doorman/not-allowed anna)])))
 
 (deftest the-options-are-required
   (let [errors (try (doorman/put-access-into-handlers handlers {:tables [shops orders] :scope-kinds scope-kinds})
@@ -169,9 +195,9 @@
                   "the handler's own step writes who asked, which the session step added")
               (is (some? (get-in line ["context" "request-id"])) "beside the message's request id")))
           (testing "Anna asks for shop 9's order 99: not found"
-            (is (= "{\"orders/one\":{\"error\":\"Not found.\"}}" (ask (:port server) anna-cookie order-99)))))
+            (is (= (refusal-json "orders/one" :doorman/not-found) (read-without-request-ids (ask (:port server) anna-cookie order-99))))))
         (testing "Bob, Owner of shop 9 only, asks for order 42: not found"
-          (is (= "{\"orders/one\":{\"error\":\"Not found.\"}}" (ask (:port server) (cookie bob) order-42))))
+          (is (= (refusal-json "orders/one" :doorman/not-found) (read-without-request-ids (ask (:port server) (cookie bob) order-42)))))
         (testing "a handler without a :record: only for someone who holds its action somewhere"
           (let [remind #(.body (.send (HttpClient/newHttpClient)
                                       (cond-> (HttpRequest/newBuilder (URI. (str "http://localhost:" (:port server) "/mail/http")))
@@ -180,10 +206,13 @@
                                         true (-> (.POST (HttpRequest$BodyPublishers/ofString "{\"orders/remind\":{}}")) (.build)))
                                       (HttpResponse$BodyHandlers/ofString)))]
             (is (= "{\"orders/remind\":{}}" (remind (cookie anna))) "Anna is Staff somewhere")
-            (is (= "{\"orders/remind\":{\"error\":\"Not found.\"}}" (remind (cookie carl))) "Carl is in no shop")
-            (is (= "{\"orders/remind\":{\"error\":\"Not found.\"}}" (remind nil)) "nobody signed in")))
-        (testing "nobody signed in: not found"
-          (is (= "{\"orders/one\":{\"error\":\"Not found.\"}}" (ask (:port server) nil order-42))))
+            (is (= (refusal-json "orders/remind" :doorman/not-found) (read-without-request-ids (remind (cookie carl)))) "Carl is in no shop")
+            (is (= (refusal-json "orders/remind" :doorman/signed-out) (read-without-request-ids (remind nil))) "nobody signed in")))
+        (testing "nobody signed in: signed out, whether the record exists or not"
+          (is (= (refusal-json "orders/one" :doorman/signed-out) (read-without-request-ids (ask (:port server) nil order-42))))
+          (is (= (refusal-json "orders/one" :doorman/signed-out) (read-without-request-ids (ask (:port server) nil order-99))))
+          (is (= (refusal-json "orders/one" :doorman/signed-out) (read-without-request-ids (ask (:port server) nil (random-uuid))))
+              "no such order: the same answer"))
         (finally
           (bridge/stop-server! server)
           (cellar/stop-pool! pool))))))

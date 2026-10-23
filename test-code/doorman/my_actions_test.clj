@@ -5,6 +5,7 @@
   (:require
    [clojure.string :as str]
    [clojure.test :refer [deftest is testing]]
+   [doorman.test-answers :refer [refusal refusal-json read-without-request-ids without-request-id]]
    [cellar.api :as cellar]
    [doorman.api :as doorman]
    [doorman.shapes]
@@ -82,7 +83,8 @@
 (deftest the-handler-writes-out-bridge-s-keys
   (let [handler (doorman/make-my-actions-handler {:pool (Object.) :tables tables :scope-kinds scope-kinds
                                                   :find-session-step no-session-step :rate-limit {:max 60 :per-ms 60000}})]
-    (is (= #{:params-shape :answer-shape :rate-limit :run-steps-in :steps} (set (keys handler))))
+    (is (= #{:params-shape :answer-shape :refusals :rate-limit :run-steps-in :steps} (set (keys handler))))
+    (is (= doorman/refusals (:refusals handler)) "its find-session step refuses with doorman's reasons")
     (is (= doorman/my-actions-answer-shape (:answer-shape handler)))
     (is (= {:max 60 :per-ms 60000} (:rate-limit handler)))))
 
@@ -101,7 +103,7 @@
                                          {:doorman/my-actions {}}
                                          {:wire wire :log log}))]
     (if (bridge/is-error-answer? answer)
-      answer
+      (without-request-id answer)
       (:shaped-data (wire-api/turn-json-data-into-shaped-data-or-errors wire doorman/my-actions-answer-shape answer)))))
 
 (deftest what-may-i-do
@@ -139,7 +141,7 @@
         (testing "nobody signed in: what is open to anyone"
           (is (= [{:scope-kind nil :scope-id nil :actions [:posts/read]}] (ask nil "http://app.test"))))
         (testing "a request from another site is refused before anything is read"
-          (is (= {:error "This request didn't come from the app's own pages."} (ask (cookie anna) "https://elsewhere.test"))))
+          (is (= (refusal :doorman/not-allowed) (ask (cookie anna) "https://elsewhere.test"))))
         (testing "an app with no open actions: no entry of nil kind and id"
           (let [closed {:doorman/my-actions
                         (doorman/make-my-actions-handler {:pool pool :tables [shops orders] :scope-kinds scope-kinds

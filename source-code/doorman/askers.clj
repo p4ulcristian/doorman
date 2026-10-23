@@ -26,10 +26,10 @@
 (def ^:private nobody {:person-id nil :visitor-id nil :session-flags #{}})
 
 (def ^:private not-from-the-app
-  {:error "This request didn't come from the app's own pages."})
+  {:reason :doorman/not-allowed :because "This request didn't come from the app's own pages."})
 
 (def ^:private cookie-and-token
-  {:error "A request carries a session's cookie or a token, not both."})
+  {:reason :doorman/not-allowed :because "A request carries a session's cookie or a token, not both."})
 
 (defn find-token-text
   "The text of the request's Authorization: Bearer header, or nil. Any
@@ -41,9 +41,10 @@
 
 (defn find-asker-of-request
   "{:asker {:person-id :visitor-id :session-flags} :token-id id-or-nil},
-   or {:refusal answer} for a request doorman answers with an error: one
-   carrying both a cookie and a token, or one changing something by a
-   cookie (or nothing) without the app's Origin."
+   or {:refusal {:reason :doorman/not-allowed :because text}} for a
+   request doorman refuses: one carrying both a cookie and a token, or one
+   changing something by a cookie (or nothing) without the app's Origin.
+   A token that is wrong, ended or revoked is nobody's."
   [pool request {:keys [cookie-name allowed-origin] :as settings}]
   (let [token-text (find-token-text request)
         cookie?    (some? (cookie/find-cookie-value request cookie-name))]
@@ -81,7 +82,8 @@
      :enter (fn [context]
               (let [{:keys [refusal asker token-id]} (find-asker-of-request pool (:bridge/request context) settings)]
                 (if refusal
-                  (bridge/add-answer-to-context context refusal)
+                  (do ((:bridge/log context) :info :doorman/request-refused {:because (:because refusal)})
+                      (bridge/refuse context (:reason refusal) nil))
                   (put-asker-into-context context asker token-id))))}))
 
 (defn find-session-key-of-request
@@ -94,7 +96,7 @@
 (defn- find-asker-or-throw [pool request settings]
   (let [{:keys [refusal] :as found} (find-asker-of-request pool request settings)]
     (when refusal
-      (throw (ex-info (:error refusal) {:type :doorman/refused-request :answer refusal})))
+      (throw (ex-info (:because refusal) {:type :doorman/refused-request :reason (:reason refusal)})))
     found))
 
 (defn run-as-asker-of-request!
