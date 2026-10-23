@@ -1,6 +1,6 @@
 # Sessions for visitors, and none for servers
 
-> **Changed in part** by [doorman owns a person's tokens, and only sign-in names a person](2026-10-23-doorman-owns-tokens-and-only-sign-in-names-a-person.md) (2026-10-23, not built yet): a call proves who it is by doorman's session cookie or by a token doorman made for that person; only `sign-in!` names a person.
+> **Changed in part** by [doorman owns a person's tokens, and only sign-in names a person](2026-10-23-doorman-owns-tokens-and-only-sign-in-names-a-person.md) (2026-10-23, built on tidy-up, not released): a call proves who it is by doorman's session cookie or by a token doorman made for that person; only `sign-in!` names a person.
 
 > **Built** by [Visitors get sessions of their own, and their rows move to the person at sign-in](2026-10-23-visitors-get-sessions-and-their-rows-move-at-sign-in.md) (2026-10-23, v0.7.0): the length is `:visitor-session-days`, renewed like a person's; a visitor's things are rows, not session data; the frame cookie is not built yet; servers get no session.
 

@@ -49,7 +49,8 @@
 (def ^:private order-42 #uuid "42000000-0000-4000-8000-000000000042")
 (def ^:private order-99 #uuid "99000000-0000-4000-8000-000000000099")
 
-(def ^:private settings {:cookie-name "app_session" :session-days 1 :visitor-session-days 1 :renew-after-minutes 60 :allowed-origin "http://app.test" :secure-cookie? false})
+(def ^:private settings {:cookie-name "app_session" :session-days 1 :visitor-session-days 1 :renew-after-minutes 60 :allowed-origin "http://app.test" :secure-cookie? false
+                         :token-lead "app_" :token-shown-characters 10 :token-longest-days 30})
 
 (def ^:private answer-the-order
   {:name  :answer-the-order
@@ -88,7 +89,7 @@
 
 (defn- make-database! [pool]
   (run-sql! pool "DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public; DROP SCHEMA IF EXISTS doorman CASCADE; DROP SCHEMA IF EXISTS cellar CASCADE")
-  (with-out-str @(:slow-part (cellar/migrate! pool (into [shops orders doorman/sessions-table] doorman/access-tables) [] test-settings/migrate-options)))
+  (with-out-str @(:slow-part (cellar/migrate! pool (into [shops orders doorman/sessions-table doorman/tokens-table] doorman/access-tables) [] test-settings/migrate-options)))
   (doorman/install-access-functions! pool [shops orders] scope-kinds)
   (run-sql! pool (str "INSERT INTO shops VALUES ('" shop-7 "'), ('" shop-9 "')"))
   (run-sql! pool (str "INSERT INTO orders VALUES ('" order-42 "', '" shop-7 "'), ('" order-99 "', '" shop-9 "')"))

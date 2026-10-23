@@ -67,7 +67,8 @@
 (def ^:private shop-9 #uuid "90000000-0000-4000-8000-000000000009")
 
 (def ^:private settings {:cookie-name "app_session" :session-days 1 :visitor-session-days 1 :renew-after-minutes 60
-                         :allowed-origin "http://app.test" :secure-cookie? false})
+                         :allowed-origin "http://app.test" :secure-cookie? false
+                         :token-lead "app_" :token-shown-characters 10 :token-longest-days 30})
 
 (def ^:private no-session-step {:name :no-session :enter identity})
 
@@ -115,7 +116,7 @@
           ask      #(ask-as handlers %1 %2)]
       (try
         (run-sql! pool "DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public; DROP SCHEMA IF EXISTS doorman CASCADE; DROP SCHEMA IF EXISTS cellar CASCADE")
-        (with-out-str @(:slow-part (cellar/migrate! pool (into [shops doorman/sessions-table] doorman/access-tables) [] test-settings/migrate-options)))
+        (with-out-str @(:slow-part (cellar/migrate! pool (into [shops doorman/sessions-table doorman/tokens-table] doorman/access-tables) [] test-settings/migrate-options)))
         (cellar/run-in-transaction! pool {:read-only? false}
           (fn [transaction]
             (doorman/add-scope! transaction scope-kinds :shop shop-9 paul nil)

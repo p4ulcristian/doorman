@@ -74,7 +74,8 @@
 
 (def ^:private settings
   {:cookie-name "app_session" :session-days 30 :visitor-session-days 2 :renew-after-minutes 60
-   :allowed-origin "https://app.test" :secure-cookie? true})
+   :allowed-origin "https://app.test" :secure-cookie? true
+   :token-lead "app_" :token-shown-characters 10 :token-longest-days 30})
 
 (def ^:private anna #uuid "a0000000-0000-4000-8000-000000000001")
 (def ^:private bob #uuid "b0000000-0000-4000-8000-000000000002")
@@ -122,8 +123,8 @@
                    (set (map :sql (:instant plan)))))
             (is (= 1 (count (:slow plan))))
             (is (str/starts-with? (:sql (first (:slow plan))) "CREATE INDEX CONCURRENTLY IF NOT EXISTS doorman_scopes_scope__parent_kind_scope__parent_id_idx ON doorman.scopes")))
-          @(:slow-part (cellar/migrate! pool today [] test-settings/migrate-options))
-          (is (cellar/does-database-match-tables? pool today []) "nothing left to do")
+          @(:slow-part (cellar/migrate! pool (conj today doorman/tokens-table) [] test-settings/migrate-options))
+          (is (cellar/does-database-match-tables? pool (conj today doorman/tokens-table) []) "nothing left to do; the tokens' table made by the same plan")
           (testing "every row survives, with no flags and no visitor"
             (is (= [[anna "" nil] [anna "" nil] [bob "" nil]]
                    (sort-by (comp str first)
@@ -143,6 +144,6 @@
                   (is (= [nil nil #{}] (find-asker step visitor-cookie)) "the visitor's session ended")
                   (is (= [anna nil #{:impersonated}] (find-asker step (turn-set-cookie-into-value (:set-cookie signed-in))))))))
             (testing "signing out everywhere ends the old sessions with the new"
-              (is (= 3 (doorman/sign-out-everywhere! pool anna)))
+              (is (= {:sessions 3 :tokens 0} (doorman/sign-out-everywhere! pool anna)))
               (is (= [nil nil #{}] (find-asker step "anna-other-device"))))))
         (finally (cellar/stop-pool! pool))))))

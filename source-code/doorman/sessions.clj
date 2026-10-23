@@ -10,10 +10,8 @@
    [cellar.api :as cellar]
    [doorman.asking :as asking]
    [doorman.cookie :as cookie]
-   [doorman.origin :as origin]
    [doorman.settings :as settings]
-   [logbook.api :as logbook]
-   [bridge.api :as bridge])
+   [doorman.tokens :as tokens])
   (:import
    (java.time Duration Instant OffsetDateTime ZoneOffset)
    (java.util UUID)))
@@ -38,7 +36,10 @@
 
 (defn- turn-text-into-flags [text] (set (map keyword (remove str/blank? (str/split (or text "") #" ")))))
 
-(defn- find-live-session [pool-or-transaction request {:keys [cookie-name]}]
+(defn find-live-session
+  "The request's session row, with its fingerprint, if its cookie (the
+   one the settings name) has a live one."
+  [pool-or-transaction request {:keys [cookie-name]}]
   (when-let [cookie-value (cookie/find-cookie-value request cookie-name)]
     (let [fingerprint (cookie/turn-cookie-value-into-fingerprint cookie-value)]
       (some-> (cellar/find-one-row pool-or-transaction find-session {:session/fingerprint fingerprint})
@@ -101,7 +102,10 @@
     {:set-cookie (cookie/make-set-cookie-text cookie-name "" 0 secure-cookie?)}))
 
 (defn sign-out-everywhere! [pool person-id]
-  (cellar/run-statement! pool delete-sessions-of-person {:session/person-id person-id}))
+  (cellar/run-in-transaction! pool {:read-only? false}
+                              (fn [transaction]
+                                {:sessions (cellar/run-statement! transaction delete-sessions-of-person {:session/person-id person-id})
+                                 :tokens   (tokens/delete-tokens-of-person! transaction person-id)})))
 
 (defn delete-ended-sessions! [pool]
   (cellar/run-statement! pool delete-ended-sessions {}))
@@ -112,9 +116,10 @@
   (.isBefore (.toInstant ^OffsetDateTime ends-at)
              (.minus (.plus (Instant/now) (Duration/ofDays days)) (Duration/ofMinutes renew-after-minutes))))
 
-(defn- find-asker
-  "{:person-id :visitor-id :session-flags} of the request's session; nils
-   and #{} without one."
+(defn find-session-asker!
+  "{:person-id :visitor-id :session-flags} of the request's session (its
+   cookie, the one the settings name); nils and #{} without a live one. A
+   session seen again is pushed out, at most once in :renew-after-minutes."
   [pool request settings]
   (if-let [{:session/keys [fingerprint person-id visitor-id flags ends-at]} (find-live-session pool request settings)]
     (let [days (find-days settings person-id)]
@@ -123,25 +128,3 @@
                                                             :session/ends-at     (find-ends-at days)}))
       {:person-id person-id :visitor-id (when-not person-id visitor-id) :session-flags (turn-text-into-flags flags)})
     {:person-id nil :visitor-id nil :session-flags #{}}))
-
-(defn find-session-key-of-request [request {:keys [cookie-name]}]
-  (some-> (cookie/find-cookie-value request cookie-name) cookie/turn-cookie-value-into-fingerprint))
-
-(def ^:private not-from-the-app
-  {:error "This request didn't come from the app's own pages."})
-
-(defn make-find-session-step [pool settings]
-  (let [{:keys [allowed-origin] :as settings} (settings/check-settings settings)]
-    {:name  :doorman/find-session
-     :enter (fn [context]
-              (let [request (:bridge/request context)]
-                (if (origin/does-request-come-from-allowed-origin? request allowed-origin)
-                  (let [{:keys [person-id visitor-id session-flags]} (find-asker pool request settings)]
-                    (cond-> (assoc context
-                                   :doorman/person-id person-id
-                                   :doorman/visitor-id visitor-id
-                                   :doorman/session-flags session-flags)
-                      ;; the steps after this one, and what they call, write lines that say who asked
-                      person-id  (update :bridge/log logbook/with-context {:person-id person-id})
-                      visitor-id (update :bridge/log logbook/with-context {:visitor-id visitor-id})))
-                  (bridge/add-answer-to-context context not-from-the-app))))}))

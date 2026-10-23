@@ -12,7 +12,8 @@
 
 (def ^:private port (some-> (System/getenv "DOORMAN_TEST_PORT") parse-long))
 
-(def ^:private settings {:cookie-name "app_session" :session-days 30 :visitor-session-days 2 :renew-after-minutes 60 :allowed-origin "https://app.test" :secure-cookie? true})
+(def ^:private settings {:cookie-name "app_session" :session-days 30 :visitor-session-days 2 :renew-after-minutes 60 :allowed-origin "https://app.test" :secure-cookie? true
+                         :token-lead "app_" :token-shown-characters 10 :token-longest-days 30})
 
 (def ^:private anna #uuid "a0000000-0000-4000-8000-000000000001")
 
@@ -62,7 +63,7 @@
           step (doorman/make-find-session-step pool settings)]
       (try
         (cellar/run-statement! pool (cellar/make-query-from-sql-text "test" "DROP SCHEMA IF EXISTS doorman CASCADE; DROP SCHEMA IF EXISTS cellar CASCADE") {})
-        (with-out-str @(:slow-part (cellar/migrate! pool [doorman/sessions-table] [] test-settings/migrate-options)))
+        (with-out-str @(:slow-part (cellar/migrate! pool [doorman/sessions-table doorman/tokens-table] [] test-settings/migrate-options)))
         (let [{:keys [set-cookie]} (sign-in! pool anna)]
           (testing "a signed-in request: the person is in the context, and in the message's log"
             (let [context (run-find-session step (make-request set-cookie "https://app.test"))]
@@ -124,5 +125,5 @@
         (testing "signing out everywhere ends every session of the person"
           (sign-in! pool anna)
           (sign-in! pool anna)
-          (is (= 2 (doorman/sign-out-everywhere! pool anna))))
+          (is (= {:sessions 2 :tokens 0} (doorman/sign-out-everywhere! pool anna))))
         (finally (cellar/stop-pool! pool))))))

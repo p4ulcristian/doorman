@@ -52,7 +52,8 @@
 (def ^:private order-42 #uuid "42000000-0000-4000-8000-000000000042")
 (def ^:private order-99 #uuid "99000000-0000-4000-8000-000000000099")
 
-(def ^:private settings {:cookie-name "app_session" :session-days 1 :visitor-session-days 1 :renew-after-minutes 60 :allowed-origin "http://app.test" :secure-cookie? false})
+(def ^:private settings {:cookie-name "app_session" :session-days 1 :visitor-session-days 1 :renew-after-minutes 60 :allowed-origin "http://app.test" :secure-cookie? false
+                         :token-lead "app_" :token-shown-characters 10 :token-longest-days 30})
 
 (def ^:private find-all-orders (cellar/make-query-from-sql-text "all orders, no WHERE" "SELECT order__id FROM orders ORDER BY order__id"))
 (def ^:private insert-order (cellar/make-query-from-sql-text "insert order" "INSERT INTO orders (order__shop_id) VALUES (:order/shop-id)"))
@@ -81,7 +82,7 @@
 (defn- make-database! [owner-pool]
   (run-sql! owner-pool "DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public; DROP SCHEMA IF EXISTS doorman CASCADE; DROP SCHEMA IF EXISTS cellar CASCADE")
   (run-sql! owner-pool "DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'doorman_app') THEN CREATE ROLE doorman_app LOGIN; END IF; END $$")
-  (let [tables (into (doorman/put-gates-on-tables [shops orders] scope-kinds) (conj doorman/access-tables doorman/sessions-table))]
+  (let [tables (into (doorman/put-gates-on-tables [shops orders] scope-kinds) (conj doorman/access-tables doorman/sessions-table doorman/tokens-table))]
     (doorman/install-access-functions! owner-pool [shops orders] scope-kinds)        ; before the gates: their policies call these
     (with-out-str @(:slow-part (cellar/migrate! owner-pool tables [] test-settings/migrate-options)))
     (cellar/grant-tables-to-role! owner-pool tables "doorman_app"))
@@ -154,7 +155,7 @@
                   "outside a message, nobody is asking")
               (cookie bob)
               (cookie bob)
-              (is (= 2 (doorman/sign-out-everywhere! app-pool bob)))))
+              (is (= {:sessions 2 :tokens 0} (doorman/sign-out-everywhere! app-pool bob)))))
           (testing "a query with no WHERE: Postgres returns only the asker's rows"
             (is (= (str "{\"orders/all\":[\"" order-42 "\"]}") (ask (:port server) (cookie anna) "{\"orders/all\":{}}")))
             (is (= (str "{\"orders/all\":[\"" order-99 "\"]}") (ask (:port server) (cookie bob) "{\"orders/all\":{}}")))
@@ -170,20 +171,25 @@
             (is (= "{\"orders/sneak\":{\"error\":\"Something went wrong.\"}}"
                    (ask (:port server) (cookie anna) (str "{\"orders/sneak\":{\"order/shop-id\":\"" shop-7 "\"}}")))
                 "Anna may edit shop 7's orders, but orders/see only reads"))
-          (testing "run-as-asker!: a transaction as an asker, off a message, held by the same gates"
-            (let [as (fn [asker read-only? f] (doorman/run-as-asker! app-pool asker {:read-only? read-only? :scope-kinds scope-kinds} f))
-                  anna-asker {:person-id anna :visitor-id nil :session-flags #{}}]
-              (let [seen (set (as anna-asker true #(mapv :order/id (cellar/find-rows % find-all-orders {}))))]
+          (testing "run-as-asker-of-request!: a transaction as the request's asker, off a message, held by the same gates"
+            (let [as (fn [request read-only? f]
+                       (doorman/run-as-asker-of-request! app-pool request {:settings settings :read-only? read-only? :scope-kinds scope-kinds} f))
+                  anna-request {:request-method :get :headers {"cookie" (cookie anna)}}]
+              (let [seen (set (as anna-request true #(mapv :order/id (cellar/find-rows % find-all-orders {}))))]
                 (is (contains? seen order-42) "her shop's order")
                 (is (not (contains? seen order-99)) "not shop 9's"))
-              (is (= [] (as {:person-id nil :visitor-id nil :session-flags #{}} true #(mapv :order/id (cellar/find-rows % find-all-orders {}))))
+              (is (= [] (as {:request-method :get :headers {}} true #(mapv :order/id (cellar/find-rows % find-all-orders {}))))
                   "nobody: no rows")
-              (is (thrown? Exception (as anna-asker false #(cellar/run-statement! % insert-order {:order/shop-id shop-9})))
+              (is (thrown? Exception (as anna-request false #(cellar/run-statement! % insert-order {:order/shop-id shop-9})))
                   "a row in another shop is refused")
-              (is (thrown? Exception (as anna-asker true #(cellar/run-statement! % insert-order {:order/shop-id shop-7})))
+              (is (thrown? Exception (as anna-request true #(cellar/run-statement! % insert-order {:order/shop-id shop-7})))
                   "read-only: no write at all")
+              (is (= :doorman/refused-request
+                     (:type (ex-data (try (as (assoc anna-request :request-method :post) true identity)
+                                          (catch clojure.lang.ExceptionInfo e e)))))
+                  "a request that changes something without the app's Origin is refused, as by the step")
               (is (= :doorman/bad-options
-                     (:type (ex-data (try (as anna-asker nil identity) (catch clojure.lang.ExceptionInfo e e))))))))
+                     (:type (ex-data (try (as anna-request nil identity) (catch clojure.lang.ExceptionInfo e e))))))))
           (testing "the leak test: Anna, asked for shop 9's order, gets nothing of it"
             (let [anna-request {:request-method :post
                                 :headers {"origin" "http://app.test" "cookie" (cookie anna)}}]

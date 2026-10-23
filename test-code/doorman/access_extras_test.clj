@@ -124,7 +124,8 @@
 (def ^:private agreement-9 (id 909))  ; shop 9 and partner 1, ended
 
 (def ^:private settings {:cookie-name "app_session" :session-days 1 :visitor-session-days 1 :renew-after-minutes 60
-                         :allowed-origin "http://app.test" :secure-cookie? false})
+                         :allowed-origin "http://app.test" :secure-cookie? false
+                         :token-lead "app_" :token-shown-characters 10 :token-longest-days 30})
 
 ;; -----------------------------------------------------------------------------
 ;; Handlers
@@ -162,7 +163,7 @@
 (defn- make-database! [owner-pool]
   (run-sql! owner-pool "DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public; DROP SCHEMA IF EXISTS doorman CASCADE; DROP SCHEMA IF EXISTS cellar CASCADE")
   (run-sql! owner-pool "DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'doorman_app') THEN CREATE ROLE doorman_app LOGIN; END IF; END $$")
-  (let [ready (into (doorman/put-gates-on-tables tables scope-kinds) (conj doorman/access-tables doorman/sessions-table))]
+  (let [ready (into (doorman/put-gates-on-tables tables scope-kinds) (conj doorman/access-tables doorman/sessions-table doorman/tokens-table))]
     (doorman/install-access-functions! owner-pool tables scope-kinds)
     (with-out-str @(:slow-part (cellar/migrate! owner-pool ready [] test-settings/migrate-options)))
     (cellar/grant-tables-to-role! owner-pool ready "doorman_app"))

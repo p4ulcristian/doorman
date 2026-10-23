@@ -1,5 +1,7 @@
 # A handler says where it acts, and Postgres hears only that
 
+> **Changed in part** by [doorman owns a person's tokens, and only sign-in names a person](2026-10-23-doorman-owns-tokens-and-only-sign-in-names-a-person.md) (2026-10-23, built on tidy-up, not released): `run-as-asker!` is `run-as-asker-of-request!`, the asker found in the request.
+
 > The user's decision, 2026-10-23, from Iron Rainbow's port (GROUNDWORK-GAPS.md, P1: 295 endpoints check their action on the shop the request names). Changes in part [access, piece 3: the check](2026-10-22-access-piece-3-the-check.md), [access, piece 4: the gates](2026-10-22-access-piece-4-the-gates.md), [access, piece 2: sentences into SQL](2026-10-22-access-piece-2-sentences-into-sql.md), [access, piece 5: the leak test](2026-10-22-access-piece-5-the-leak-test.md) and [[:member …] names a column or a kind of one scope](2026-10-23-a-member-sentence-names-a-column-or-a-kind-of-one-scope-and-what-is-held-there.md). Built on tidy-up, not released.
 
 **What was wrong:** Anna holds `:machines/edit` in shop A and is an employee in shop B. She asks `:machines/create-machine` with `{:workspace/id B}`.

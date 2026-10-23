@@ -2,8 +2,13 @@
   "Who is asking, and what may they do. The api of doorman.
 
    Who is asking: a session in Postgres, a cookie of random bytes in the
-   browser. The app's own login proves who someone is, then calls sign-in!;
-   signing out deletes rows, so access ends at once on every server. A
+   browser. The app's own login proves who someone is, then calls sign-in!,
+   the one door that names a person; signing out deletes rows, so access
+   ends at once on every server. A signed-in person makes tokens for
+   themselves (make-token!), for a script or an AI acting as them: a call
+   with Authorization: Bearer <token> is theirs, with the same actions,
+   scopes and gates. Every call after sign-in carries a proof doorman made
+   and reads itself, the cookie or a token; no code names the person. A
    visitor (not signed in) gets a session of their own when the app first
    keeps something for them (start-visitor-session!); the rows kept name
    its id, and become the person's at sign-in. A server calling the app
@@ -33,8 +38,9 @@
      (doorman/list-actions-of-person transaction scope-kinds anna-id)
      ;=> {[:shop #uuid \"…\"] #{:orders/see :orders/edit}}
 
-   Its tables are maps (sessions-table, access-tables) the app passes to
-   cellar, in their own folder, doorman."
+   Its tables are maps (sessions-table, tokens-table, access-tables) the
+   app passes to cellar, in their own folder, doorman. Asking as a named
+   person is a REPL's only, outside this api: doorman.repl."
   (:require
    [doorman.askers :as askers]
    [doorman.check :as check]
@@ -49,6 +55,7 @@
    [doorman.sessions :as sessions]
    [doorman.settings :as settings]
    [doorman.system :as system]
+   [doorman.tokens :as tokens]
    [cellar.api :as cellar]))
 
 ;; -----------------------------------------------------------------------------
@@ -58,7 +65,8 @@
   "The settings, every key required (see doorman.settings):
 
      {:cookie-name \"app_session\" :session-days 30 :visitor-session-days 7
-      :renew-after-minutes 60 :allowed-origin \"https://shop.example\" :secure-cookie? true}"
+      :renew-after-minutes 60 :allowed-origin \"https://shop.example\" :secure-cookie? true
+      :token-lead \"shop_\" :token-shown-characters 11 :token-longest-days 365}"
   settings/settings-shape)
 
 (def sessions-table
@@ -72,6 +80,24 @@
                [:session/created-at  :time/instant {:default :now}]
                [:session/ends-at     :time/instant]]
    :indexes   [[:session/person-id] [:session/ends-at]]
+   :references []
+   :triggers   []
+   :gates     nil
+   :on-change nil})
+
+(def tokens-table
+  "The tokens people made, in doorman's own folder: never their text, its
+   SHA-256 (:token/fingerprint), the characters the list shows, a name,
+   the person, the end."
+  {:table     :doorman/tokens
+   :columns   [[:token/id          :uuid         {:primary-key? true}]
+               [:token/fingerprint :string       {:unique? true}]
+               [:token/person-id   :uuid]
+               [:token/name        :string]
+               [:token/shown-start :string]
+               [:token/created-at  :time/instant {:default :now}]
+               [:token/ends-at     :time/instant]]
+   :indexes   [[:token/person-id] [:token/ends-at]]
    :references []
    :triggers   []
    :gates     nil
@@ -112,8 +138,9 @@
   (sessions/sign-out! pool request settings))
 
 (defn sign-out-everywhere!
-  "Ends every session of a person at once (signing out everywhere, a
-   removed member). Returns how many ended."
+  "Ends every session and every token of a person at once, in one
+   transaction (signing out everywhere, a person the app removes).
+   Returns how many of each ended: {:sessions 2 :tokens 1}."
   [pool person-id]
   (sessions/sign-out-everywhere! pool person-id))
 
@@ -122,26 +149,73 @@
   [pool]
   (sessions/delete-ended-sessions! pool))
 
+(defn make-token!
+  "A token for the signed-in person of the request (its session's cookie),
+   for a script or an AI acting as them: {:token-id id :text \"shop_…\"
+   :shown-start \"shop_AbCdEf\" :ends-at instant}. The text is shown this
+   once: the table keeps only its SHA-256. It is the settings' :token-lead
+   and 43 random characters. options, every key required, checked first:
+   {:settings :name \"catalog script\" :ends-at instant}, the end after now
+   and at most :token-longest-days from now. Refused (throws
+   :doorman/no-token-for-asker): nobody signed in; a token's call (a token
+   makes no token); a session with flags (the token, having none, would
+   shed them).
+
+     (doorman/make-token! pool request {:settings settings :name \"catalog script\"
+                                        :ends-at (.plus (Instant/now) (Duration/ofDays 90))})"
+  [pool request options]
+  (askers/make-token! pool request (settings/check-token-options options)))
+
+(defn list-tokens
+  "The tokens of the request's person (by its cookie or a token) that
+   haven't ended, newest first, never their text: [{:token-id :name
+   :shown-start :created-at :ends-at}]; [] for nobody. Checks the
+   settings first."
+  [pool request settings]
+  (askers/list-tokens pool request (settings/check-settings settings)))
+
+(defn revoke-token!
+  "Ends one token of the request's person (by its cookie or a token) at
+   once. Whether it was theirs and there; another person's is never
+   touched. Checks the settings first."
+  [pool request settings token-id]
+  (askers/revoke-token! pool request (settings/check-settings settings) token-id))
+
+(defn delete-ended-tokens!
+  "Forgets tokens that have ended; for a nightly background job. Returns how many."
+  [pool]
+  (tokens/delete-ended-tokens! pool))
+
 (defn find-session-key-of-request
-  "A key that tells one browser's session apart from another's, without a
-   database read (a hash of its cookie, the one the settings name), or nil
-   without a cookie: for rate limits. Never the cookie itself."
+  "A key that tells one asker apart from another, without a database read:
+   a hash of the request's token (Authorization: Bearer), else of its
+   cookie (the one the settings name), or nil with neither: for rate
+   limits. Never the token or the cookie itself."
   [request settings]
-  (sessions/find-session-key-of-request request settings))
+  (askers/find-session-key-of-request request settings))
 
 (defn make-find-session-step
-  "A step for the start of a handler: a request that changes something must
-   come from the app's own pages (its Origin), or it is answered with an
-   error; then the context gets :doorman/person-id (nil when nobody is
-   signed in), :doorman/visitor-id (a visitor session's id, nil when
-   someone is signed in or there is none) and :doorman/session-flags
-   (#{} for none), and the person or the visitor is added to the
-   message's log (bridge's :bridge/log, given logbook's with-context
-   {:person-id …} or {:visitor-id …}), so every line the later steps write
-   says who asked. Reads the request at :bridge/request. Checks the
-   settings first."
+  "A step for the start of a handler: who is asking, from the request's
+   proof (read at :bridge/request), doorman's own and nothing else:
+
+   - a token, Authorization: Bearer <text>: its person, with no session
+     flags (a token has none) and no visitor; no Origin check, since a
+     browser never sends the header on its own; a wrong, ended or revoked
+     token is nobody;
+   - else the session's cookie: a request that changes something must
+     come from the app's own pages (its Origin), or it is answered with an
+     error; the session's person or visitor and its flags;
+   - a request carrying both is answered with an error.
+
+   Then the context gets :doorman/person-id (nil when nobody is signed
+   in), :doorman/visitor-id (a visitor session's id, nil when someone is
+   signed in or there is none) and :doorman/session-flags (#{} for none),
+   and the person (with the token's id, {:person-id … :token-id …}) or the
+   visitor is added to the message's log (bridge's :bridge/log, given
+   logbook's with-context), so every line the later steps write says who
+   asked. Checks the settings first."
   [pool settings]
-  (sessions/make-find-session-step pool settings))
+  (askers/make-find-session-step pool settings))
 
 ;; -----------------------------------------------------------------------------
 ;; What may they do
@@ -444,20 +518,22 @@
   [pool system-name options f]
   (system/run-as-system! pool system-name (settings/check-system-options options) f))
 
-(defn run-as-asker!
-  "Runs (f transaction) in one transaction of its own, as an asker
-   {:person-id :visitor-id :session-flags}: code on the app's own route
-   (a sign-in callback, a page that reads rows) held by the gates by the
-   person's scopes and actions, the visitor, the session's flags: every
-   action the person holds counts, in every scope holding it (no handler
-   narrows it to one action and its scopes). options, every key required:
-   {:read-only? false :scope-kinds scope-kinds} (the checked scope kinds).
-   A transaction handed in is refused.
+(defn run-as-asker-of-request!
+  "Runs (f transaction) in one transaction of its own, as the asker
+   doorman finds in the request, by the find-session step's rules (its
+   token, else its cookie and the Origin): code on the app's own route (a
+   page that reads rows) held by the gates by the person's scopes and
+   actions, the visitor, the session's flags: every action the person
+   holds counts, in every scope holding it (no handler narrows it to one
+   action and its scopes). A request the step refuses throws
+   :doorman/refused-request. options, every key required: {:settings
+   settings :read-only? false :scope-kinds scope-kinds} (the checked
+   scope kinds). A transaction handed in is refused.
 
-     (doorman/run-as-asker! pool asker {:read-only? true :scope-kinds scope-kinds}
-                            (fn [transaction] (cellar/find-rows transaction list-orders {})))"
-  [pool asker options f]
-  (askers/run-as-asker! pool (settings/check-asker asker) (settings/check-asker-run-options options) f))
+     (doorman/run-as-asker-of-request! pool request {:settings settings :read-only? true :scope-kinds scope-kinds}
+                                       (fn [transaction] (cellar/find-rows transaction list-orders {})))"
+  [pool request options f]
+  (askers/run-as-asker-of-request! pool request (settings/check-asker-run-options options) f))
 
 (defn find-system-leaks
   "The leak test of a named system actor, for an app's own test suite:

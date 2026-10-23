@@ -8,7 +8,7 @@
 -- "acting" is the one action a handler's steps act as: a person's sentences
 -- count only for it (doorman.is_acting), and "holding" lists only the
 -- scopes the handler acts in. "every_action" true: every action counts
--- (run-as-asker!, "what may I do?", explain-refusal, the check itself, a
+-- (run-as-asker-of-request!, "what may I do?", explain-refusal, the check itself, a
 -- named system actor's :anyone rows).
 -- and doorman.passing, 'on' only while one of doorman's own functions reads
 -- past the gates (a :via's related rows, a scope's state, a changed row).

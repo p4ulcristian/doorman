@@ -8,6 +8,11 @@
    [malli.core :as malli]
    [malli.error :as malli-error]))
 
+(def random-characters
+  "How many random characters a token has after its lead: 32 random
+   bytes as URL-safe base64 without padding."
+  43)
+
 (def settings-shape
   "The settings, every key required.
    :cookie-name: the session cookie's name. Cookies don't tell ports apart,
@@ -20,14 +25,24 @@
    at most once in this many minutes (one write, not one per request).
    :allowed-origin: the app's own address; a request that changes something
    must carry it as its Origin.
-   :secure-cookie?: false only in local development, over plain http."
+   :secure-cookie?: false only in local development, over plain http.
+   :token-lead: the text every token a person makes starts with, before
+   its 43 random characters (\"app_\"), so a leaked one says what it is.
+   :token-shown-characters: how many of a token's first characters its
+   list shows, the lead among them; at most the lead and half of the
+   random part, so the list never gives most of a token away.
+   :token-longest-days: the furthest a token's end date may be, in days
+   from when it is made."
   [:map {:closed true}
    [:cookie-name [:re #"^[A-Za-z0-9_-]+$"]]
    [:session-days pos-int?]
    [:visitor-session-days pos-int?]
    [:renew-after-minutes pos-int?]
    [:allowed-origin :string]
-   [:secure-cookie? :boolean]])
+   [:secure-cookie? :boolean]
+   [:token-lead [:re #"^[A-Za-z0-9_-]+$"]]
+   [:token-shown-characters pos-int?]
+   [:token-longest-days pos-int?]])
 
 (def ^:private flags-shape
   [:set [:fn {:error/message "should be a keyword without a namespace, like :impersonated"}
@@ -46,8 +61,9 @@
    [:session-flags flags-shape]])
 
 (def asker-shape
-  "Who explain-refusal explains for, every key required: the session's
-   person, its visitor (for nobody signed in) and its flags."
+  "Who explain-refusal explains for, and doorman.repl's step asks as, every
+   key required: the session's person, its visitor (for nobody signed in)
+   and its flags."
   [:map {:closed true}
    [:person-id [:maybe :uuid]]
    [:visitor-id [:maybe :uuid]]
@@ -101,13 +117,28 @@
    [:read-only? :boolean]])
 
 (def asker-run-options-shape
-  "run-as-asker!'s options, every key required.
+  "run-as-asker-of-request!'s options, every key required.
+   :settings: the settings (settings-shape): the cookie's name, the
+   allowed origin.
    :read-only?: true, Postgres refuses every write in its transaction.
    :scope-kinds: the app's, checked (check-scope-kinds): which actions the
    person's memberships hold."
   [:map {:closed true}
+   [:settings map?]
    [:read-only? :boolean]
    [:scope-kinds map?]])
+
+(def token-options-shape
+  "make-token!'s options, every key required.
+   :settings: the settings (settings-shape): the lead, the shown
+   characters, the longest end date.
+   :name: what the person calls it (\"catalog script\").
+   :ends-at: when it ends, a java.time.Instant, after now and at most
+   :token-longest-days from now."
+  [:map {:closed true}
+   [:settings map?]
+   [:name [:string {:min 1}]]
+   [:ends-at [:fn {:error/message "should be a java.time.Instant"} #(instance? java.time.Instant %)]]])
 
 (def leak-options-shape
   "find-leaks's options, every key required: malli's generator makes each
@@ -136,9 +167,17 @@
   data)
 
 (defn check-settings
-  "Returns the settings; throws with every problem at once."
+  "Returns the settings; throws with every problem at once, and for a
+   :token-shown-characters showing more than the lead and half of the
+   random part."
   [settings]
-  (check-data-for-shape "The settings" :doorman/bad-settings settings-shape settings))
+  (check-data-for-shape "The settings" :doorman/bad-settings settings-shape settings)
+  (let [{:keys [token-lead token-shown-characters]} settings
+        most (+ (count token-lead) (quot random-characters 2))]
+    (when (< most token-shown-characters)
+      (throw (ex-info (str "The settings have problems: " (pr-str {:token-shown-characters [(str "should be at most " most ", the lead and half of the random part")]}))
+                      {:type :doorman/bad-settings :errors {:token-shown-characters [(str "should be at most " most)]}}))))
+  settings)
 
 (defn check-sign-in-options
   "Returns the options, the settings in them checked too; throws with
@@ -174,9 +213,20 @@
   (check-data-for-shape "The options" :doorman/bad-options system-options-shape options))
 
 (defn check-asker-run-options
-  "Returns the options; throws with every problem at once."
+  "Returns the options, the settings in them checked too; throws with
+   every problem at once."
   [options]
-  (check-data-for-shape "The options" :doorman/bad-options asker-run-options-shape options))
+  (check-data-for-shape "The options" :doorman/bad-options asker-run-options-shape options)
+  (check-settings (:settings options))
+  options)
+
+(defn check-token-options
+  "Returns the options, the settings in them checked too; throws with
+   every problem at once."
+  [options]
+  (check-data-for-shape "The options" :doorman/bad-options token-options-shape options)
+  (check-settings (:settings options))
+  options)
 
 (defn check-leak-options
   "Returns the options; throws with every problem at once."

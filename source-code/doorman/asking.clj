@@ -23,7 +23,7 @@
 (def telling-shape
   "What Postgres is told besides who asks, every key required.
    :acting: the one action a handler's steps act as, or :every-action
-   (run-as-asker!, \"what may I do?\", explain-refusal, the check itself):
+   (run-as-asker-of-request!, \"what may I do?\", explain-refusal, the check itself):
    a person's sentences count only for it.
    :holding: {[kind scope-id] #{action …}}, the actions held in each scope
    that counts: for a handler's steps, only the scopes it acts in, and in

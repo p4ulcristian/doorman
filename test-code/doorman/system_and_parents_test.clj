@@ -112,7 +112,7 @@
                             "END $$"))
   (run-sql! super-pool "GRANT CREATE ON DATABASE postgres TO doorman_owner; ALTER SCHEMA public OWNER TO doorman_owner")
   (let [owner-pool (test-settings/start-pool! "doorman_owner" 2)
-        ready      (into (doorman/put-gates-on-tables tables scope-kinds) (conj doorman/access-tables doorman/sessions-table))]
+        ready      (into (doorman/put-gates-on-tables tables scope-kinds) (conj doorman/access-tables doorman/sessions-table doorman/tokens-table))]
     (try
       (doorman/install-access-functions! owner-pool tables scope-kinds)
       (with-out-str @(:slow-part (cellar/migrate! owner-pool ready [] test-settings/migrate-options)))
@@ -233,10 +233,12 @@
                        {:pool app-pool :tables tables :scope-kinds scope-kinds
                         :find-session-step (doorman/make-find-session-step app-pool {:cookie-name "app_session" :session-days 1
                                                                                      :visitor-session-days 1 :renew-after-minutes 60
-                                                                                     :allowed-origin "http://app.test" :secure-cookie? false})})
+                                                                                     :allowed-origin "http://app.test" :secure-cookie? false
+                                                                                     :token-lead "app_" :token-shown-characters 10 :token-longest-days 30})})
                 {:keys [set-cookie]} (doorman/sign-in! app-pool {:headers {}} anna
                                                        {:settings {:cookie-name "app_session" :session-days 1 :visitor-session-days 1
-                                                                   :renew-after-minutes 60 :allowed-origin "http://app.test" :secure-cookie? false}
+                                                                   :renew-after-minutes 60 :allowed-origin "http://app.test" :secure-cookie? false
+                                                                   :token-lead "app_" :token-shown-characters 10 :token-longest-days 30}
                                                         :tables [] :session-flags #{}})
                 request {:request-method :post
                          :headers {"origin" "http://app.test" "cookie" (first (str/split set-cookie #";"))}}]
@@ -270,7 +272,8 @@
             (is (= [] (as-person app-pool anna #(cellar/find-rows % (cellar/make-query-from-sql-text "jobs" "SELECT job__id FROM jobs") {}))))
             (is (= [] (as-person app-pool anna #(cellar/find-rows % (cellar/make-query-from-sql-text "photos" "SELECT photo__id FROM photos") {}))))
             (let [settings {:cookie-name "app_session" :session-days 1 :visitor-session-days 1 :renew-after-minutes 60
-                            :allowed-origin "http://app.test" :secure-cookie? false}
+                            :allowed-origin "http://app.test" :secure-cookie? false
+                            :token-lead "app_" :token-shown-characters 10 :token-longest-days 30}
                   ready    (doorman/put-access-into-handlers
                             {:jobs/one {:action :jobs/see :record [:jobs :job/id] :params-shape [:map [:job/id :uuid]]
                                         :answer-shape [:map [:job/id :uuid]] :rate-limit nil :run-steps-in nil

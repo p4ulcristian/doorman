@@ -98,7 +98,8 @@
 (def ^:private station-b (id 2222))
 
 (def ^:private settings {:cookie-name "app_session" :session-days 1 :visitor-session-days 1 :renew-after-minutes 60
-                         :allowed-origin "http://app.test" :secure-cookie? false})
+                         :allowed-origin "http://app.test" :secure-cookie? false
+                         :token-lead "app_" :token-shown-characters 10 :token-longest-days 30})
 
 ;; -----------------------------------------------------------------------------
 ;; Handlers
@@ -194,7 +195,7 @@
 (defn- make-database! [owner-pool]
   (run-sql! owner-pool "DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public; DROP SCHEMA IF EXISTS doorman CASCADE; DROP SCHEMA IF EXISTS cellar CASCADE")
   (run-sql! owner-pool "DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'doorman_app') THEN CREATE ROLE doorman_app LOGIN; END IF; END $$")
-  (let [ready (into (doorman/put-gates-on-tables tables scope-kinds) (conj doorman/access-tables doorman/sessions-table))]
+  (let [ready (into (doorman/put-gates-on-tables tables scope-kinds) (conj doorman/access-tables doorman/sessions-table doorman/tokens-table))]
     (doorman/install-access-functions! owner-pool tables scope-kinds)
     (with-out-str @(:slow-part (cellar/migrate! owner-pool ready [] test-settings/migrate-options)))
     (cellar/grant-tables-to-role! owner-pool ready "doorman_app"))
@@ -281,8 +282,8 @@
 
           (testing "a suspended shop's own row is frozen for its own kind's actions"
             (let [shop-c-row #(first (cellar/find-rows owner-pool (query (str "SELECT shop__name, shop__status FROM shops WHERE shop__id = '" shop-c "'")) {}))
-                  as-paul    #(doorman/run-as-asker! app-pool {:person-id paul :visitor-id nil :session-flags #{}}
-                                                     {:read-only? false :scope-kinds scope-kinds} %)]
+                  as-paul    #(doorman/run-as-asker-of-request! app-pool (request paul)
+                                                                 {:settings settings :read-only? false :scope-kinds scope-kinds} %)]
               (is (= {:error "Not allowed."} (ask paul :shops/rename {:shop/id shop-c})) "the check: the Owner can't change its settings")
               (is (= 0 (as-paul #(cellar/run-statement! % (query (str "UPDATE shops SET shop__status = 'open' WHERE shop__id = '" shop-c "'")) {})))
                   "the gate: nor lift the suspension")
