@@ -11,12 +11,12 @@
   ;; a reference what it does on delete, update and when checked, an index as a map;
   ;; migrate! takes {:tables :extensions :functions :views}, a function a file or a made {:name :sql};
   ;; run-in-transaction! takes the caller's :log, where after-commit failures go
-  io.github.p4ulcristian/cellar   {:git/sha "4396e6bc9353b8eb614c0db7b839da537d11863e"}
+  io.github.p4ulcristian/cellar   {:git/tag "v0.4.6" :git/sha "4396e6b"}
   ;; a handler's steps: the session step and the check are steps; answer-message for the leak test;
   ;; refuse, and a handler's :refusals
   ;; on its tidy-up branch, not released: a refusal is a named reason, declared on its handler;
   ;; answer-message counts every message on the app's meter
-  io.github.p4ulcristian/bridge {:git/sha "63451adbe42a6176074e1208ad4148e0eda19eab"}
+  io.github.p4ulcristian/bridge {:git/tag "v0.7.8" :git/sha "90dd8fa"}
   ;; the step that finds the session adds the person to the message's log
   io.github.p4ulcristian/logbook  {:git/tag "v0.1.2" :git/sha "823f8fc"}
   ;; the settings and options checked by their shapes; the leak test: params
@@ -33,6 +33,6 @@
                        ;; the tests' meter, one per pool, made as an app makes its own (cellar brings the same)
                        io.github.p4ulcristian/meter {:git/tag "v0.1.4" :git/sha "bf81c46"}
                        ;; the tests' wire, made as an app makes its own (bridge brings the same)
-                       io.github.p4ulcristian/wire {:git/tag "v0.2.0" :git/sha "d66b7cb"}}
+                       io.github.p4ulcristian/wire {:git/tag "v0.2.1" :git/sha "900a84d"}}
          :exec-fn     cognitect.test-runner.api/test
          :exec-args   {:dirs ["test-code"]}}}}
