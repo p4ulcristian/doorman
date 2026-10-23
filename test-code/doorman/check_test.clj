@@ -7,6 +7,7 @@
    [doorman.test-answers :refer [refusal refusal-json read-without-request-ids without-request-id]]
    [doorman.api :as doorman]
    [doorman.check :as check]
+   [doorman.shapes :as shapes]
    [doorman.test-settings :as test-settings]
    [cellar.api :as cellar]
    [doorman.test-log :as test-log :refer [log]]
@@ -157,6 +158,15 @@
             ":x/z declares :doorman/not-found, doorman's own: doorman adds it to every handler it wraps"]
            problems)
         ":refusals written out; doorman's own never the app's")))
+
+(deftest the-browser-s-shapes-get-doorman-s-reasons-too
+  (is (= {:orders/one {:params-shape nil :answer-shape nil
+                       :refusals {:order/archived nil :doorman/signed-out nil :doorman/not-found nil :doorman/not-allowed nil}}}
+         (shapes/put-refusals-into-shapes {:orders/one {:params-shape nil :answer-shape nil :refusals {:order/archived nil}}}))
+      "doorman.api's .cljs half hands this on")
+  (is (= :doorman/bad-shapes
+         (:type (ex-data (try (shapes/put-refusals-into-shapes {:orders/one {:refusals {:doorman/signed-out nil}}})
+                              (catch clojure.lang.ExceptionInfo e e)))))))
 
 (deftest signed-out-says-nothing-of-the-record
   (is (= [:doorman/signed-out :doorman/signed-out :doorman/not-found :doorman/not-allowed]

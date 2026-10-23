@@ -31,3 +31,16 @@
             [:scope-kind [:maybe :keyword]]
             [:scope-id [:maybe :uuid]]
             [:actions [:vector :keyword]]]])
+
+(defn put-refusals-into-shapes
+  "The browser's shapes by name (bridge's), each name's :refusals with
+   refusals added, as put-access-into-handlers adds them on the server. A
+   name that declares one of them itself throws, :doorman/bad-shapes."
+  [shapes-by-name]
+  (let [doubled (for [[message-name {name-refusals :refusals}] shapes-by-name
+                      reason (keys refusals)
+                      :when (contains? name-refusals reason)]
+                  (str message-name " declares " reason ", doorman's own: put-refusals-into-shapes adds it"))]
+    (when (seq doubled)
+      (throw (ex-info (str "The shapes have problems: " (vec doubled)) {:type :doorman/bad-shapes :problems (vec doubled)})))
+    (update-vals shapes-by-name #(update % :refusals merge refusals))))

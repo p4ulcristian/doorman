@@ -25,13 +25,7 @@
    server, so the app doesn't write them. A name that declares one of them
    itself throws, :doorman/bad-shapes."
   [shapes-by-name]
-  (let [doubled (for [[message-name {name-refusals :refusals}] shapes-by-name
-                      reason (keys shapes/refusals)
-                      :when (contains? name-refusals reason)]
-                  (str message-name " declares " reason ", doorman's own: put-refusals-into-shapes adds it"))]
-    (when (seq doubled)
-      (throw (ex-info (str "The shapes have problems: " (vec doubled)) {:type :doorman/bad-shapes :problems (vec doubled)})))
-    (update-vals shapes-by-name #(update % :refusals merge shapes/refusals))))
+  (shapes/put-refusals-into-shapes shapes-by-name))
 
 (def my-actions-answer-shape
   "The answer of \"what may I do?\": [{:scope-kind :scope-id :actions} …],
