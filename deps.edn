@@ -9,7 +9,7 @@
  {;; Postgres: the queries, the table maps and their gates
   io.github.p4ulcristian/cellar   {:git/tag "v0.4.5" :git/sha "801ca83"}
   ;; a handler's steps: the session step and the check are steps; answer-message for the leak test
-  io.github.p4ulcristian/bridge {:git/tag "v0.7.6" :git/sha "3b42b42"}
+  io.github.p4ulcristian/bridge {:git/tag "v0.7.7" :git/sha "3756f50"}
   ;; the step that finds the session adds the person to the message's log
   io.github.p4ulcristian/logbook  {:git/tag "v0.1.2" :git/sha "823f8fc"}
   ;; the settings and options checked by their shapes; the leak test: params
