@@ -472,6 +472,7 @@
    kinds' denies in them:
 
      {:orders {:actions    {:orders/see \"…\" :orders/edit \"…\"}
+               :reads      {:orders/see \"…\" :orders/edit \"…\"}
                :operations {:read \"…\" :insert \"…\" :update \"…\" :delete \"…\"}}}
 
    The check uses an action's condition: its sentences whose :only allows
@@ -479,7 +480,9 @@
    :read), so a record the action only reads there is :doorman/not-allowed; the gates
    use an operation's, each action by the sentences whose :only allows that
    operation on the table, and each person's sentence only while its action
-   is the one acted as (doorman.is_acting)."
+   is the one acted as (doorman.is_acting). :reads, each action that reads
+   by its sentences allowing :read, is what a marked param's row is read
+   by ([:uuid {:doorman/row-of :orders}])."
   [tables scope-kinds]
   (conditions/make-sql-conditions tables scope-kinds))
 
@@ -542,8 +545,13 @@
    record's (its columns', and the kinds its action reaches through a
    [:member <kind of one scope>] or a :via); every one holding it; none. A
    step writing a row in another scope, by a bug or a crafted param, is
-   refused by the gate. The options, every key required, are checked
-   first:
+   refused by the gate. A param whose shape marks it as a row of a table,
+   [:uuid {:doorman/row-of :workstations}] (in a :map, :vector,
+   :sequential, :set, :maybe or :and of the :params-shape), must be a row
+   the handler's action reads in those scopes, else :doorman/not-found
+   (:doorman/signed-out for nobody), before any step; a mark doorman can't
+   reach, or of a table the action reads by no sentence, stops the start.
+   The options, every key required, are checked first:
 
      (doorman/put-access-into-handlers handlers {:pool pool :tables tables :scope-kinds scope-kinds
                                                  :find-session-step (doorman/make-find-session-step pool settings)})
@@ -661,7 +669,12 @@
    (nil for another :scope), and each sentence's :way
    (:anyone :signed-in :visitor [:holds action]) and whether it :holds?
    for the asker (for :no-scope, only an open way can); the :answer is the
-   check's. An unknown handler:
+   check's. Every handler's :rows-of: its marked params
+   ([:uuid {:doorman/row-of …}]), [{:path [:workstation-id] :table
+   :workstations :id … :readable? false}], read as the check reads them
+   once it lets the message through (an unreadable one makes the :answer
+   :doorman/not-found); [] for a handler with no mark, nil when the check
+   refuses before them. An unknown handler:
    {:handler … :answer :no-such-handler}."
   [options asker handler-name params]
   (explain/explain-refusal (settings/check-explain-options options) (settings/check-asker asker) handler-name params))

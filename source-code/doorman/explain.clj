@@ -15,6 +15,7 @@
    [doorman.check :as check]
    [doorman.conditions :as conditions]
    [doorman.memberships :as memberships]
+   [doorman.rows-of :as rows-of]
    [doorman.scope-kinds :as scope-kinds]
    [doorman.sentences :as sentences]))
 
@@ -202,6 +203,36 @@
                                           [{:column nil :scope-kind (first scope) :scope-id (:scope-id (:scope named))}]
                                           []))}))
 
+(defn- find-scopes-acted-in
+  "The scopes the handler's steps would act in, once the check let it
+   through: as the check finds them (check.clj)."
+  [{:keys [record scope]} explained actions-by-scope sideways]
+  (cond record          (concat (for [{:keys [scope-kind scope-id]} (get-in explained [:record :scopes]) :when scope-id]
+                                  [scope-kind scope-id])
+                                (filter #(contains? sideways (first %)) (keys actions-by-scope)))
+        (vector? scope) [[(first scope) (get-in explained [:scope :scope-id])]]
+        (= :no-scope scope) []
+        :else           (keys actions-by-scope)))
+
+(defn- explain-rows-of
+  "The marked params ([:uuid {:doorman/row-of …}]), each with whether the
+   action reads its row in the scopes the handler acts in, Postgres told
+   as the check tells it; and the answer, :doorman/not-found when one
+   isn't. [] for a handler with no mark; nil when the check refuses
+   before the marks."
+  [transaction {:keys [tables scope-kinds]} conditions asker {:keys [action params-shape] :as handler} params actions-by-scope explained]
+  (let [marks (rows-of/find-marks params-shape)]
+    (if-not (and (seq marks) (= :allowed (:answer explained)))
+      (assoc explained :rows-of (if (seq marks) nil []))
+      (let [needs    (acting/find-needs tables scope-kinds)
+            scopes   (find-scopes-acted-in handler explained actions-by-scope (acting/find-sideways-kinds needs action))
+            queries  (rows-of/make-readable-queries marks tables (check/find-reads-of-action conditions action) action)
+            _        (asking/set-asking! transaction asker (acting/make-telling needs action scopes actions-by-scope))
+            readable (rows-of/find-readable transaction queries (rows-of/find-marked-ids marks params))]
+        (asking/set-asking! transaction asker {:acting :every-action :holding actions-by-scope})
+        (cond-> (assoc explained :rows-of readable)
+          (not-every? :readable? readable) (assoc :answer :doorman/not-found))))))
+
 (defn- name-answer
   "The check's answer: :allowed, or the reason it refuses with, the same
    as the check's (check/find-refusal-reason): :doorman/signed-out when
@@ -212,7 +243,8 @@
 (defn explain-refusal
   "The explanation, plain data; the options and the asker checked already.
    Its :answer is :allowed or the check's reason, :doorman/not-found,
-   :doorman/not-allowed or :doorman/signed-out."
+   :doorman/not-allowed or :doorman/signed-out; a marked param's row the
+   action doesn't read makes it :doorman/not-found (:rows-of)."
   [{:keys [pool handlers tables scope-kinds] :as options} asker handler-name params]
   (let [{:keys [action record] :as handler} (get handlers handler-name)]
     (if-not handler
@@ -222,12 +254,14 @@
                                     (fn [transaction]
                                       (let [actions-by-scope (asking/set-asking-with-every-action! transaction scope-kinds asker)]
                                         (asking/set-passing! transaction)
-                                        (-> (merge {:handler handler-name
-                                                    :action  action
-                                                    :writes? (scope-kinds/does-action-write? scope-kinds action)
-                                                    :asker   asker}
-                                                   (if record
-                                                     (assoc (explain-record transaction options conditions asker action record params actions-by-scope)
-                                                            :scope nil)
-                                                     (explain-no-record transaction options asker handler params actions-by-scope)))
-                                            (update :answer name-answer (:person-id asker))))))))))
+                                        (as-> (merge {:handler handler-name
+                                                      :action  action
+                                                      :writes? (scope-kinds/does-action-write? scope-kinds action)
+                                                      :asker   asker}
+                                                     (if record
+                                                       (assoc (explain-record transaction options conditions asker action record params actions-by-scope)
+                                                              :scope nil)
+                                                       (explain-no-record transaction options asker handler params actions-by-scope)))
+                                              explained
+                                          (explain-rows-of transaction options conditions asker handler params actions-by-scope explained)
+                                          (update explained :answer name-answer (:person-id asker))))))))))

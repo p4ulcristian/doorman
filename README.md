@@ -58,7 +58,7 @@ step's lines say who asked
 | what | `make-my-actions-handler` `my-actions-answer-shape` (the shape on both sides: `doorman.api`'s `.cljs` half has it too) | "what may I do?" for the browser: the asker's actions by scope, and the open ones under nil kind and id, every scope; the denies taken out; read-only, as the asker |
 | what | `make-sql-conditions` | the sentences, checked, as SQL: one condition per action and per operation, the denies in them |
 | what | `install-access-functions!` | the SQL functions the check and the gates call, and those the app's sentences and denies need (a `:via`'s, a scope state's, the guard's, `doorman."may <action> on <table>"()`), before migrate |
-| what | `put-access-into-handlers` | every handler says where it acts (`:record`, or `:scope` `[kind param]`, `:every-scope-holding-the-action`, `:no-scope`); the check in front of its steps, which run in a transaction where Postgres hears only the handler's action, in those scopes ([why](decisions/2026-10-23-a-handler-says-where-it-acts-and-postgres-hears-only-that.md)) |
+| what | `put-access-into-handlers` | every handler says where it acts (`:record`, or `:scope` `[kind param]`, `:every-scope-holding-the-action`, `:no-scope`); the check in front of its steps, which run in a transaction where Postgres hears only the handler's action, in those scopes ([why](decisions/2026-10-23-a-handler-says-where-it-acts-and-postgres-hears-only-that.md)); a param marked `[:uuid {:doorman/row-of :workstations}]` must be a row the action reads there, else `:doorman/not-found`, before any step ([why](decisions/2026-10-23-a-param-may-say-it-is-a-row-of-a-table.md)) |
 | what | `put-gates-on-tables` | the table maps with their gates, `:gates nil` on the ungated ones, and a record under a record (`:parent`) given its link to the parent and the fill of its carried columns, for cellar |
 | what | `find-leaks` | the leak test, for the app's own tests, by the app's wire and log (`:wire`, `:log`); a record or scope it must not reach must be refused `:doorman/not-found` (`:doorman/signed-out` for an asker nobody signed in); a `:scope [kind param]` handler asked in each foreign scope (`:scope-kinds`) |
 | what | `refusals` (both sides; the browser's half has `put-refusals-into-shapes` too) | doorman's reasons, `:doorman/signed-out` `:doorman/not-found` `:doorman/not-allowed`, added to every handler it wraps |
@@ -168,6 +168,8 @@ app's shapes by name. Each needs its text in the app's catalogs.
                    :steps        [find-order add-order-answer]}    ; they use (:doorman/transaction context)
     :orders/place {:action :orders/edit
                    :scope  [:shop :order/shop-id]                  ; the shop the param names: held there, or :doorman/not-found
+                   :params-shape [:map [:order/shop-id :uuid]
+                                  [:workstation-id [:uuid {:doorman/row-of :workstations}]]]   ; a row :orders/edit reads in that shop
                    …}
     :orders/mine  {:action :orders/see
                    :scope  :every-scope-holding-the-action         ; or :no-scope: :anyone, :signed-in, [:me …] only

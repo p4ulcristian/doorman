@@ -404,14 +404,22 @@
                          (str "(" updates ") AND " (turn-guard-into-sql (:table table) guard table (for-op :insert)))
                          updates))]
     {:actions    (into {} (for [action actions] [action (or (condition-of action nil) "false")]))
+     ;; each action that reads, by its sentences allowing :read here: a
+     ;; marked param's row (doorman.rows-of), as the read gate reads it
+     :reads      (into {} (for [action actions
+                                :when (contains? (get actions-do action) :read)
+                                :let [condition (condition-of action :read)]
+                                :when condition]
+                            [action condition]))
      :operations {:read   (join-with-or (remove #(or (nil? %) (= "false" %)) ["(SELECT doorman.is_passing())" moving (for-op :read)]))
                   :insert (for-op :insert)
                   :update (join-with-or (remove #(or (nil? %) (= "false" %)) [moving update-gate]))
                   :delete (for-op :delete)}}))
 
 (defn make-sql-conditions
-  "{table-key {:actions {action sql} :operations {:read sql …}}} for every
-   table with sentences."
+  "{table-key {:actions {action sql} :reads {action sql} :operations {:read
+   sql …}}} for every table with sentences: :reads, for each action that
+   reads, its sentences allowing :read on the table."
   [tables scope-kinds]
   (check-sentences tables scope-kinds)
   (let [place      {:tables-by-key (into {} (map (juxt :table identity)) tables) :scope-kinds scope-kinds}

@@ -36,14 +36,19 @@
    record. Refused, no step runs (bridge's refuse; doorman adds its
    reasons to every handler's :refusals). Let through, Postgres is told again, in the same
    transaction: the handler's action alone, in the scopes it acts in
-   (doorman.acting), and the handler's steps run with :doorman/transaction
-   in the context. The gates decide which rows."
+   (doorman.acting). Then every param its :params-shape marks as a row of
+   a table, [:uuid {:doorman/row-of :workstations}], must be a row the
+   action reads as told (doorman.rows-of), or :doorman/not-found
+   (:doorman/signed-out for nobody signed in), still before any step. The
+   handler's steps run with :doorman/transaction in the context. The
+   gates decide which rows."
   (:require
    [clojure.string :as str]
    [cellar.api :as cellar]
    [doorman.acting :as acting]
    [doorman.asking :as asking]
    [doorman.conditions :as conditions]
+   [doorman.rows-of :as rows-of]
    [doorman.scope-kinds :as scope-kinds]
    [doorman.sentences :as sentences]
    [doorman.shapes :as shapes]
@@ -91,6 +96,15 @@
       :else
       [(str handler-name ": :scope is [kind param], :every-scope-holding-the-action or :no-scope, not " (pr-str scope))])))
 
+(defn find-reads-of-action
+  "{table sql}: the action's read condition on each table whose sentences
+   let it read (make-sql-conditions' :reads)."
+  [conditions action]
+  (into {} (for [[table {:keys [reads]}] conditions
+                 :let [sql (get reads action)]
+                 :when sql]
+             [table sql])))
+
 (defn- find-problems-of-handler
   "Doorman's own keys, and bridge's written out: :steps, :refusals ({} for
    none; never doorman's own, which doorman adds), :rate-limit (nil for
@@ -98,7 +112,7 @@
    transaction and an app's own would be replaced unseen. Both shapes must
    be real ones: the leak test makes params from :params-shape, and an
    answer leaves only as :answer-shape allows. Where it acts: exactly one
-   of :record and :scope."
+   of :record and :scope. Its :params-shape's marks (doorman.rows-of)."
   [setup [handler-name {:keys [action params-shape answer-shape run-steps-in refusals] :as handler}]]
   (concat
    (when-not action [(str handler-name " has no :action")])
@@ -111,7 +125,10 @@
          :when (and (map? refusals) (contains? refusals reason))]
      (str handler-name " declares " reason ", doorman's own: doorman adds it to every handler it wraps"))
    (when run-steps-in [(str handler-name " has its own :run-steps-in; doorman runs the steps in its transaction, so it must be nil")])
-   (find-where-problems handler-name handler setup)))
+   (find-where-problems handler-name handler setup)
+   (when (and action params-shape)
+     (rows-of/find-problems-of-marks handler-name handler (:tables setup) (:scope-kinds setup)
+                                     (find-reads-of-action (:conditions setup) action)))))
 
 (defn check-handlers
   "Throws with every problem of every handler at once. setup:
@@ -259,12 +276,14 @@
         :else
         {:scopes (if (= :no-scope scope) [] (keys (:doorman/actions context)))}))
 
-(defn- make-check-step [{:keys [tables needs] :as setup} {:keys [record scope action] :as handler}]
-  (let [prepared (assoc setup
+(defn- make-check-step [{:keys [tables needs conditions] :as setup} {:keys [record scope action params-shape] :as handler}]
+  (let [marks    (rows-of/find-marks params-shape)
+        prepared (assoc setup
                         :query        (when record (make-record-query setup handler))
                         :scopes-query (when record (make-record-scopes-query setup handler))
                         :sideways     (acting/find-sideways-kinds needs action)
-                        :ways         (get (sentences/find-ways-of-actions tables) action #{}))]
+                        :ways         (get (sentences/find-ways-of-actions tables) action #{}))
+        readable (when (seq marks) (rows-of/make-readable-queries marks tables (find-reads-of-action conditions action) action))]
     {:name  :doorman/check
      :enter (fn [{:doorman/keys [transaction person-id visitor-id session-flags actions] :as context}]
               (let [{:keys [answer scopes]} (cond record         (check-record prepared handler context)
@@ -275,7 +294,12 @@
                   ;; from here on, Postgres hears only the handler's action, in its scopes
                   (do (asking/set-asking! transaction {:person-id person-id :visitor-id visitor-id :session-flags session-flags}
                                           (acting/make-telling needs action scopes actions))
-                      context))))}))
+                      ;; every marked param a row the action reads there, before any step
+                      (if (and (seq marks)
+                               (not-every? :readable? (rows-of/find-readable transaction readable
+                                                                             (rows-of/find-marked-ids marks (:bridge/message-data context)))))
+                        (bridge/refuse context (find-refusal-reason not-found person-id) nil)
+                        context)))))}))
 
 (defn- does-action-only-read?
   "An action that does nothing but :read runs in a read-only transaction:
