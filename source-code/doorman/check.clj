@@ -312,7 +312,9 @@
     (let [context (bridge/run-steps-until-answered [find-session-step] context)]
       (if (bridge/does-context-have-answer? context)
         context
-        (cellar/run-in-transaction! pool {:read-only? (does-action-only-read? setup action)}
+        ;; the message's log, with its request id (and the person, once found): a
+        ;; step's after-commit work that fails is written there
+        (cellar/run-in-transaction! pool {:read-only? (does-action-only-read? setup action) :log (:bridge/log context)}
                                     (fn [transaction]
                                       (let [{:doorman/keys [person-id visitor-id session-flags]} context
                                             ;; the check reads with every action; it then tells only the handler's

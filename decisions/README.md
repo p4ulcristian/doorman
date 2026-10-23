@@ -8,7 +8,7 @@ The ones dated before 2026-10-22, sessions v1 and the five access pieces were ma
 
 - [Sessions live in Postgres](2026-10-12-sessions-live-in-postgres.md), changed in part by [doorman is its own library](2026-10-22-doorman-is-its-own-library.md)
 - [The session is the only truth](2026-10-12-the-session-is-the-only-truth.md), changed in part by [doorman owns a person's tokens, and only sign-in names a person](2026-10-23-doorman-owns-tokens-and-only-sign-in-names-a-person.md)
-- [doorman owns a person's tokens, and only sign-in names a person](2026-10-23-doorman-owns-tokens-and-only-sign-in-names-a-person.md) (built on tidy-up, not released)
+- [doorman owns a person's tokens, and only sign-in names a person](2026-10-23-doorman-owns-tokens-and-only-sign-in-names-a-person.md) (built on tidy-up, not released), changed in part by [A transaction doorman opens carries its caller's log](2026-10-23-a-transaction-doorman-opens-carries-its-callers-log.md)
 - [doorman ships no logins](2026-10-12-doorman-ships-no-logins.md), moved from Groundwork
 - [Sessions for visitors, and none for servers](2026-10-12-sessions-for-visitors-and-none-for-servers.md), moved from Groundwork (its sessions part), built by [Visitors get sessions of their own](2026-10-23-visitors-get-sessions-and-their-rows-move-at-sign-in.md), changed in part by [doorman owns a person's tokens](2026-10-23-doorman-owns-tokens-and-only-sign-in-names-a-person.md)
 - [sessions v1: signed-in sessions, a step to find them](2026-10-22-sessions-v1.md), changed in part by [doorman is its own library](2026-10-22-doorman-is-its-own-library.md), [The session step adds the person to the message's log](2026-10-22-the-session-step-adds-the-person-to-the-log.md), [Visitors get sessions of their own](2026-10-23-visitors-get-sessions-and-their-rows-move-at-sign-in.md) and [doorman owns a person's tokens](2026-10-23-doorman-owns-tokens-and-only-sign-in-names-a-person.md)
@@ -50,7 +50,7 @@ The ones dated before 2026-10-22, sessions v1 and the five access pieces were ma
 - [explain-refusal answers why, as plain data](2026-10-23-explain-refusal-answers-why-as-plain-data.md), changed in part by [A refusal is a named reason](https://github.com/p4ulcristian/bridge/blob/tidy-up/decisions/2026-10-23-a-refusal-is-a-named-reason-declared-on-its-handler.md) (bridge's) and [Roles have ids, and a member holds a set of roles](2026-10-23-roles-have-ids-and-a-member-holds-a-set-of-roles.md), added to by [A param may say it is a row of a table](2026-10-23-a-param-may-say-it-is-a-row-of-a-table.md) (`:rows-of`)
 - [Records under records wait for cellar's matching links](2026-10-23-records-under-records-wait-for-cellar.md), replaced by [Records under records carry their parent's columns, by cellar's link and a fill](2026-10-23-records-under-records-carry-their-parents-columns.md)
 - [Records under records carry their parent's columns, by cellar's link and a fill](2026-10-23-records-under-records-carry-their-parents-columns.md)
-- [A named system actor is allowed what its sentences give it, through the gates](2026-10-23-a-named-system-actor-is-allowed-what-its-sentences-give-it.md)
+- [A named system actor is allowed what its sentences give it, through the gates](2026-10-23-a-named-system-actor-is-allowed-what-its-sentences-give-it.md), changed in part by [A transaction doorman opens carries its caller's log](2026-10-23-a-transaction-doorman-opens-carries-its-callers-log.md)
 
 ## The library
 
@@ -59,3 +59,4 @@ The ones dated before 2026-10-22, sessions v1 and the five access pieces were ma
 - [The app passes its wire; doorman never makes one](2026-10-22-the-app-passes-its-wire.md), changed in part by [The session step adds the person to the message's log](2026-10-22-the-session-step-adds-the-person-to-the-log.md)
 - [The session step adds the person to the message's log; the leak test takes the app's log](2026-10-22-the-session-step-adds-the-person-to-the-log.md)
 - [A websocket is told by its Upgrade header](2026-10-23-a-websocket-is-told-by-its-upgrade-header.md)
+- [A transaction doorman opens carries its caller's log](2026-10-23-a-transaction-doorman-opens-carries-its-callers-log.md) (built on tidy-up, not released)

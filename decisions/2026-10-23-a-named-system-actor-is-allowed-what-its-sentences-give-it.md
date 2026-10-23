@@ -1,5 +1,7 @@
 # A named system actor is allowed what its sentences give it, through the gates
 
+> **Changed in part** by [A transaction doorman opens carries its caller's log](2026-10-23-a-transaction-doorman-opens-carries-its-callers-log.md) (2026-10-23, on tidy-up): `run-as-system!` takes `{:read-only? … :log …}`, the caller's log (or nil) written out.
+
 > Since v0.7.5. Adds to [Access rules are sentences in doorman's language](2026-10-17-access-rules-are-sentences-in-doormans-language.md) (a new who word) and [doorman reads past its gates only inside its own functions](2026-10-23-doorman-reads-past-its-gates-only-inside-its-own-functions.md) ("doorman has no system role" stands). Asked for by postbox's webhooks: a bounce couldn't mark a shop's row, since its function ran as the app's role with nobody asking.
 
 **Decision:**

@@ -210,7 +210,7 @@ app's shapes by name. Each needs its text in the app's catalogs.
 (doorman/revoke-token! app-pool request settings token-id)   ;=> true
 
 ;; a page reading rows as whoever asks (its cookie, or a token), held by the gates
-(doorman/run-as-asker-of-request! app-pool request {:settings settings :read-only? true :scope-kinds scope-kinds}
+(doorman/run-as-asker-of-request! app-pool request {:settings settings :read-only? true :scope-kinds scope-kinds :log log}
                                   (fn [transaction] (cellar/find-rows transaction list-orders {})))
 
 ;; in the REPL: why would Anna's message be refused?

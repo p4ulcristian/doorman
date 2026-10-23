@@ -94,7 +94,7 @@
     (cellar/grant-tables-to-role! owner-pool tables "doorman_app"))
   (run-sql! owner-pool (str "INSERT INTO shops VALUES ('" shop-7 "'), ('" shop-9 "')"))
   (run-sql! owner-pool (str "INSERT INTO orders VALUES ('" order-42 "', '" shop-7 "'), ('" order-99 "', '" shop-9 "')"))
-  (cellar/run-in-transaction! owner-pool {:read-only? false}
+  (cellar/run-in-transaction! owner-pool {:read-only? false :log nil}
     (fn [transaction]
       (doorman/add-scope! transaction scope-kinds :shop shop-7 paul nil)
       (doorman/add-scope! transaction scope-kinds :shop shop-9 bob nil)
@@ -179,7 +179,7 @@
                 "Anna may edit shop 7's orders, but orders/see only reads"))
           (testing "run-as-asker-of-request!: a transaction as the request's asker, outside a message, held by the same gates"
             (let [as (fn [request read-only? f]
-                       (doorman/run-as-asker-of-request! app-pool request {:settings settings :read-only? read-only? :scope-kinds scope-kinds} f))
+                       (doorman/run-as-asker-of-request! app-pool request {:settings settings :read-only? read-only? :scope-kinds scope-kinds :log nil} f))
                   anna-request {:request-method :get :headers {"cookie" (cookie anna)}}]
               (let [seen (set (as anna-request true #(mapv :order/id (cellar/find-rows % find-all-orders {}))))]
                 (is (contains? seen order-42) "her shop's order")

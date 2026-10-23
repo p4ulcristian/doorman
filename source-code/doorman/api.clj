@@ -628,7 +628,9 @@
                                                  :find-session-step (doorman/make-find-session-step pool settings)})
 
    The handler's steps reach the database through :doorman/transaction in
-   their context."
+   their context, which carries the message's log (:bridge/log, its
+   request id): work a step keeps with cellar's run-after-commit! that
+   fails is written there."
   [handlers options]
   (let [{:keys [tables scope-kinds] :as options} (settings/check-access-options options)]
     (check/put-access-into-handlers
@@ -764,10 +766,13 @@
    sentences; nothing else. No person, no visitor, no scope held, no
    session flag; the denies, which hold people, don't hold it. The app's
    own role runs it, which owns nothing and passes no gate. options, every
-   key required: {:read-only? false}. A transaction handed in is refused.
+   key required: {:read-only? false :log log}, :log the caller's (a job's,
+   a webhook's), which the transaction carries for cellar's
+   run-after-commit! (a failure is written there), or nil for one that
+   keeps no work. A transaction handed in is refused.
 
      ;; on shop-emails: {:allow :shop-emails/mark-bounced :to [:system :postbox]}
-     (doorman/run-as-system! pool :postbox {:read-only? false}
+     (doorman/run-as-system! pool :postbox {:read-only? false :log log}
                              (fn [transaction] (mark-bounced! transaction event)))"
   [pool system-name options f]
   (system/run-as-system! pool system-name (settings/check-system-options options) f))
@@ -781,10 +786,12 @@
    holds counts, in every scope holding it (no handler narrows it to one
    action and its scopes). A request the step refuses throws
    :doorman/refused-request, with its :reason. options, every key required: {:settings
-   settings :read-only? false :scope-kinds scope-kinds} (the checked
-   scope kinds). A transaction handed in is refused.
+   settings :read-only? false :scope-kinds scope-kinds :log log} (the
+   checked scope kinds; :log the caller's, the request's with its request
+   id, which the transaction carries for cellar's run-after-commit!, or
+   nil for one that keeps no work). A transaction handed in is refused.
 
-     (doorman/run-as-asker-of-request! pool request {:settings settings :read-only? true :scope-kinds scope-kinds}
+     (doorman/run-as-asker-of-request! pool request {:settings settings :read-only? true :scope-kinds scope-kinds :log log}
                                        (fn [transaction] (cellar/find-rows transaction list-orders {})))"
   [pool request options f]
   (askers/run-as-asker-of-request! pool request (settings/check-asker-run-options options) f))

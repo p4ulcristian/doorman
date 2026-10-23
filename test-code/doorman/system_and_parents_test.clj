@@ -135,7 +135,7 @@
       (is (cellar/does-database-match-tables? owner-pool (test-settings/declare-tables-and-access ready tables scope-kinds) []) "the link and the fill are in the maps: nothing left to do")
       (finally (cellar/stop-pool! owner-pool))))
   (run-sql! super-pool (str "INSERT INTO shops VALUES ('" shop-7 "', 'open'), ('" shop-8 "', 'suspended'), ('" shop-9 "', 'open')"))
-  (cellar/run-in-transaction! super-pool {:read-only? false}
+  (cellar/run-in-transaction! super-pool {:read-only? false :log nil}
                               (fn [transaction]
                                 (doseq [shop [shop-7 shop-8 shop-9]]
                                   (doorman/add-scope! transaction scope-kinds :shop shop (id 1) nil))
@@ -149,7 +149,7 @@
 (defn- as-person
   "(f transaction) as the person, through the gates, on the app's role."
   [app-pool person-id f]
-  (cellar/run-in-transaction! app-pool {:read-only? false}
+  (cellar/run-in-transaction! app-pool {:read-only? false :log nil}
                               (fn [transaction]
                                 (asking/set-asking! transaction {:person-id person-id :visitor-id nil :session-flags #{}}
                                                     {:acting :every-action :holding (doorman/list-actions-of-person transaction scope-kinds person-id)})
@@ -207,11 +207,11 @@
 
 (deftest a-system-actor-is-refused-a-transaction-and-a-bad-name
   (is (= :doorman/bad-system-name
-         (:type (ex-data (try (doorman/run-as-system! nil :billing/postbox {:read-only? false} identity) (catch Exception e e))))))
+         (:type (ex-data (try (doorman/run-as-system! nil :billing/postbox {:read-only? false :log nil} identity) (catch Exception e e))))))
   (is (= :doorman/bad-options
          (:type (ex-data (try (doorman/run-as-system! nil :postbox {} identity) (catch Exception e e))))))
   (is (= :doorman/system-in-a-transaction
-         (:type (ex-data (try (doorman/run-as-system! {:cellar/connection :a-transaction} :postbox {:read-only? false} identity)
+         (:type (ex-data (try (doorman/run-as-system! {:cellar/connection :a-transaction} :postbox {:read-only? false :log nil} identity)
                               (catch Exception e e)))))))
 
 ;; -----------------------------------------------------------------------------
@@ -226,15 +226,20 @@
     (with-database
       (fn [super-pool app-pool]
         (testing "postbox marks a shop's email row, in a suspended shop too: the denies hold people"
-          (is (= 1 (doorman/run-as-system! app-pool :postbox {:read-only? false}
+          (is (= 1 (doorman/run-as-system! app-pool :postbox {:read-only? false :log nil}
                                            #(cellar/run-statement! % mark-bounced {:address "seven@shop.test"}))))
-          (is (= 1 (doorman/run-as-system! app-pool :postbox {:read-only? false}
+          (is (= 1 (doorman/run-as-system! app-pool :postbox {:read-only? false :log nil}
                                            #(cellar/run-statement! % mark-bounced {:address "eight@shop.test"}))))
           (is (= [true true] (map :shop-email/bounced (find-rows super-pool "SELECT shop_email__bounced FROM shop_emails")))))
+        (testing "the transaction carries the caller's log: work kept for after its commit that fails is written there"
+          (let [lines (atom [])]
+            (doorman/run-as-system! app-pool :postbox {:read-only? false :log (fn [level event data] (swap! lines conj [level event (ex-message (:error data))]))}
+                                    (fn [transaction] (cellar/run-after-commit! transaction #(throw (ex-info "after the commit" {})))))
+            (is (= [[:error :cellar/after-commit-failed "after the commit"]] @lines))))
         (testing "the same function reads no other table's rows"
-          (is (= [] (doorman/run-as-system! app-pool :postbox {:read-only? true}
+          (is (= [] (doorman/run-as-system! app-pool :postbox {:read-only? true :log nil}
                                             #(cellar/find-rows % (cellar/make-query-from-sql-text "all" "SELECT order__id FROM orders") {}))))
-          (is (= [] (doorman/run-as-system! app-pool :postbox {:read-only? true}
+          (is (= [] (doorman/run-as-system! app-pool :postbox {:read-only? true :log nil}
                                             #(cellar/find-rows % (cellar/make-query-from-sql-text "all" "SELECT job__id FROM jobs") {})))))
         (testing "the system leak test: postbox reaches no order; another actor no email; postbox reads and changes emails, never deletes"
           (is (= [] (doorman/find-system-leaks app-pool tables :postbox {:orders [order-42 order-99]})))

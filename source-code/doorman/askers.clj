@@ -103,12 +103,12 @@
   "Runs (f transaction) in one transaction of its own, as the asker of the
    request. A transaction handed in is refused: who asks would change
    under its other statements."
-  [pool request {:keys [settings read-only? scope-kinds]} f]
+  [pool request {:keys [settings read-only? scope-kinds log]} f]
   (when (cellar/is-transaction? pool)
     (throw (ex-info "run-as-asker-of-request! runs in a transaction of its own: hand it the pool"
                     {:type :doorman/asker-in-a-transaction})))
   (let [{:keys [asker]} (find-asker-or-throw pool request settings)]
-    (cellar/run-in-transaction! pool {:read-only? read-only?}
+    (cellar/run-in-transaction! pool {:read-only? read-only? :log log}
                                 (fn [transaction]
                                   (asking/set-asking-with-every-action! transaction scope-kinds asker)
                                   (f transaction)))))

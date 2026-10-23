@@ -250,7 +250,8 @@
     (if-not handler
       {:handler handler-name :answer :no-such-handler}
       (let [conditions (conditions/make-sql-conditions tables scope-kinds)]
-        (cellar/run-in-transaction! pool {:read-only? true}
+        ;; doorman's own, read-only: keeps no work
+        (cellar/run-in-transaction! pool {:read-only? true :log nil}
                                     (fn [transaction]
                                       (let [actions-by-scope (asking/set-asking-with-every-action! transaction scope-kinds asker)]
                                         (asking/set-passing! transaction)

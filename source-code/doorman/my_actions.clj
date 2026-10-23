@@ -157,7 +157,7 @@
     (let [context (bridge/run-steps-until-answered [find-session-step] context)]
       (if (bridge/does-context-have-answer? context)
         context
-        (cellar/run-in-transaction! pool {:read-only? true}
+        (cellar/run-in-transaction! pool {:read-only? true :log (:bridge/log context)}
                                     (fn [transaction]
                                       (run (assoc context :doorman/transaction transaction))))))))
 

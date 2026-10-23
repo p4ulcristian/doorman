@@ -66,7 +66,7 @@
   (let [{:keys [settings tables session-flags]} (settings/check-sign-in-options options)
         {:keys [cookie-name session-days secure-cookie?]} settings
         cookie-value (cookie/make-cookie-value)]
-    (cellar/run-in-transaction! pool {:read-only? false}
+    (cellar/run-in-transaction! pool {:read-only? false :log nil}   ; doorman's own: keeps no work
                                 (fn [transaction]
                                   (when-let [{:session/keys [fingerprint visitor-id]} (find-live-session transaction request settings)]
                                     (when visitor-id
@@ -102,7 +102,7 @@
     {:set-cookie (cookie/make-set-cookie-text cookie-name "" 0 secure-cookie?)}))
 
 (defn sign-out-everywhere! [pool person-id]
-  (cellar/run-in-transaction! pool {:read-only? false}
+  (cellar/run-in-transaction! pool {:read-only? false :log nil}   ; doorman's own: keeps no work
                               (fn [transaction]
                                 {:sessions (cellar/run-statement! transaction delete-sessions-of-person {:session/person-id person-id})
                                  :tokens   (tokens/delete-tokens-of-person! transaction person-id)})))

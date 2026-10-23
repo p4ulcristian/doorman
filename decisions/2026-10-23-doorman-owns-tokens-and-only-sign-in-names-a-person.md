@@ -1,5 +1,7 @@
 # doorman owns a person's tokens, and only sign-in names a person
 
+> **Changed in part** by [A transaction doorman opens carries its caller's log](2026-10-23-a-transaction-doorman-opens-carries-its-callers-log.md) (2026-10-23, on tidy-up): `run-as-asker-of-request!` takes `{:settings :read-only? :scope-kinds :log}`, the caller's log (or nil) written out.
+
 > The user's decision, 2026-10-23, from the tidy-up after Groundwork v1.1 (Iron Rainbow's personal tokens for the catalog and AI calls, its `labs_api_tokens`). Changes in part [The session is the only truth](2026-10-12-the-session-is-the-only-truth.md) and [Sessions for visitors, and none for servers](2026-10-12-sessions-for-visitors-and-none-for-servers.md). Built on tidy-up, not released.
 
 **Decision:** one door names a person to doorman: `sign-in!`, called once the app's own login has proven who someone is. Every call after it carries a proof doorman made and reads itself:

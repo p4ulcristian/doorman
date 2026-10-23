@@ -90,7 +90,7 @@
         (run-sql! pool (str "INSERT INTO doorman.role_actions VALUES ('shop', '" shop-b "', 'Driver', 'orders/see')"))
         (write-membership-of-v0-7! pool eve :shop shop-a "Idle")
         (let [before (into {} (for [person people]
-                                [person (-> (cellar/run-in-transaction! pool {:read-only? true}
+                                [person (-> (cellar/run-in-transaction! pool {:read-only? true :log nil}
                                                                         #(cellar/find-rows % (cellar/make-query-from-sql-text "test"
                                                                                                                               (str "SELECT membership__scope_kind, membership__scope_id, membership__role FROM doorman.memberships WHERE membership__person_id = '" person "'"))
                                                                                            {}))

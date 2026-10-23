@@ -113,9 +113,13 @@
 
 (def system-options-shape
   "run-as-system!'s options, every key required.
-   :read-only?: true, Postgres refuses every write in its transaction."
+   :read-only?: true, Postgres refuses every write in its transaction.
+   :log: the caller's log (a job's, a webhook's), which the transaction
+   carries: work cellar's run-after-commit! keeps on it that throws is
+   written there; nil for a transaction that keeps none (cellar's)."
   [:map {:closed true}
-   [:read-only? :boolean]])
+   [:read-only? :boolean]
+   [:log [:maybe [fn? {:error/message "should be the caller's log function, made by logbook, or nil"}]]]])
 
 (def asker-run-options-shape
   "run-as-asker-of-request!'s options, every key required.
@@ -123,11 +127,15 @@
    allowed origin.
    :read-only?: true, Postgres refuses every write in its transaction.
    :scope-kinds: the app's, checked (check-scope-kinds): which actions the
-   person's memberships hold."
+   person's memberships hold.
+   :log: the caller's log (the request's, with its request id), which the
+   transaction carries: work cellar's run-after-commit! keeps on it that
+   throws is written there; nil for a transaction that keeps none (cellar's)."
   [:map {:closed true}
    [:settings map?]
    [:read-only? :boolean]
-   [:scope-kinds map?]])
+   [:scope-kinds map?]
+   [:log [:maybe [fn? {:error/message "should be the caller's log function, made by logbook, or nil"}]]]])
 
 (def token-options-shape
   "make-token!'s options, every key required.

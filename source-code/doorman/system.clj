@@ -30,12 +30,12 @@
   "Runs (f transaction) in one transaction of its own, as the named system
    actor. A transaction handed in is refused: who asks would change under
    its other statements."
-  [pool system-name {:keys [read-only?]} f]
+  [pool system-name {:keys [read-only? log]} f]
   (check-system-name system-name)
   (when (cellar/is-transaction? pool)
     (throw (ex-info "run-as-system! runs in a transaction of its own: hand it the pool"
                     {:type :doorman/system-in-a-transaction :system system-name})))
-  (cellar/run-in-transaction! pool {:read-only? read-only?}
+  (cellar/run-in-transaction! pool {:read-only? read-only? :log log}
                               (fn [transaction]
                                 (asking/set-system! transaction system-name)
                                 (f transaction))))
@@ -56,7 +56,8 @@
   (let [undo   (Object.)
         result (atom 0)]
     (try
-      (run-as-system! pool system-name {:read-only? false}
+      ;; doorman's own, undone: keeps no work
+      (run-as-system! pool system-name {:read-only? false :log nil}
                       (fn [transaction]
                         (let [query (cellar/make-query-from-sql-text "a system leak check" statement-text)]
                           (reset! result (if (.startsWith ^String statement-text "SELECT")

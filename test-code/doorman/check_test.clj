@@ -77,6 +77,18 @@
                    :rate-limit   nil
                    :run-steps-in nil
                    :steps        [{:name :remind :enter #(bridge/add-answer-to-context % {})}]}
+   :orders/clear-cache {:action       :orders/see       ; work kept for after the commit, which fails
+                        :scope        :every-scope-holding-the-action
+                        :params-shape [:map]
+                        :answer-shape [:map]
+                        :refusals     {}
+                        :rate-limit   nil
+                        :run-steps-in nil
+                        :steps        [{:name  :clear-cache
+                                        :enter (fn [context]
+                                                 (cellar/run-after-commit! (:doorman/transaction context)
+                                                                           #(throw (ex-info "the cache is gone" {})))
+                                                 (bridge/add-answer-to-context context {}))}]}
    :orders/one {:action       :orders/see
                 :record       [:orders :order/id]
                 :params-shape [:map [:order/id :uuid]]
@@ -102,7 +114,7 @@
   (with-out-str @(:slow-part (cellar/migrate! pool (test-settings/declare-tables-and-access (into [shops orders doorman/sessions-table doorman/tokens-table] doorman/access-tables) [shops orders] scope-kinds) [] test-settings/migrate-options)))
   (run-sql! pool (str "INSERT INTO shops VALUES ('" shop-7 "'), ('" shop-9 "')"))
   (run-sql! pool (str "INSERT INTO orders VALUES ('" order-42 "', '" shop-7 "'), ('" order-99 "', '" shop-9 "')"))
-  (cellar/run-in-transaction! pool {:read-only? false}
+  (cellar/run-in-transaction! pool {:read-only? false :log nil}
     (fn [transaction]
       (doorman/add-scope! transaction scope-kinds :shop shop-7 paul nil)
       (doorman/add-scope! transaction scope-kinds :shop shop-9 bob nil)
@@ -223,6 +235,19 @@
             (is (= "{\"orders/remind\":{}}" (remind (cookie anna))) "Anna is Staff somewhere")
             (is (= (refusal-json "orders/remind" :doorman/not-found) (read-without-request-ids (remind (cookie carl)))) "Carl is in no shop")
             (is (= (refusal-json "orders/remind" :doorman/signed-out) (read-without-request-ids (remind nil))) "nobody signed in")))
+        (testing "the check's transaction carries the message's log: a step's after-commit work that fails is written with its request id"
+          (reset! test-log/lines [])
+          (let [answer (.body (.send (HttpClient/newHttpClient)
+                                     (-> (HttpRequest/newBuilder (URI. (str "http://localhost:" (:port server) "/mail/http")))
+                                         (.header "origin" "http://app.test")
+                                         (.header "cookie" (cookie anna))
+                                         (.POST (HttpRequest$BodyPublishers/ofString "{\"orders/clear-cache\":{}}"))
+                                         (.build))
+                                     (HttpResponse$BodyHandlers/ofString)))
+                [line] (test-log/find-lines "cellar/after-commit-failed")]
+            (is (= "{\"orders/clear-cache\":{}}" answer) "the commit stands")
+            (is (some? (get-in line ["context" "request-id"])) "the message's request id")
+            (is (= (str anna) (get-in line ["context" "person-id"])) "and who asked")))
         (testing "nobody signed in: signed out, whether the record exists or not"
           (is (= (refusal-json "orders/one" :doorman/signed-out) (read-without-request-ids (ask (:port server) nil order-42))))
           (is (= (refusal-json "orders/one" :doorman/signed-out) (read-without-request-ids (ask (:port server) nil order-99))))

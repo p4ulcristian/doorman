@@ -183,7 +183,7 @@
   (run-sql! owner-pool (str "INSERT INTO companies VALUES ('" company-1 "')"))
   (run-sql! owner-pool (str "INSERT INTO shops VALUES ('" shop-7 "', 'open'), ('" shop-8 "', 'suspended'), ('" shop-9 "', 'open')"))
   (run-sql! owner-pool (str "INSERT INTO partners VALUES ('" partner-1 "')"))
-  (cellar/run-in-transaction! owner-pool {:read-only? false}
+  (cellar/run-in-transaction! owner-pool {:read-only? false :log nil}
                               (fn [transaction]
                                 (doorman/add-scope! transaction scope-kinds :company company-1 dora nil)
                                 (doorman/remove-membership! transaction [:company company-1] dora)
@@ -235,7 +235,7 @@
   [app-pool asker f]
   (let [result (volatile! nil)]
     (try
-      (cellar/run-in-transaction! app-pool {:read-only? false}
+      (cellar/run-in-transaction! app-pool {:read-only? false :log nil}
                                   (fn [transaction]
                                     (asking/set-asking! transaction (merge {:person-id nil :visitor-id nil :session-flags #{}} asker)
                                                         {:acting  :every-action
@@ -344,7 +344,7 @@
             (is (= #{order-42 order-80 order-99 order-c order-v order-w} (orders-seen-by app-pool {:person-id sam})))
             (is (= 0 (updated-by app-pool {:person-id sam} order-99)) "the gates: Support only reads")
             (is (thrown-with-msg? clojure.lang.ExceptionInfo #"exactly one scope"
-                                  (cellar/run-in-transaction! owner-pool {:read-only? false}
+                                  (cellar/run-in-transaction! owner-pool {:read-only? false :log nil}
                                                               #(doorman/add-scope! % scope-kinds :platform (id 3004) sam nil)))))
 
           (testing "[:member column action]: noting needs orders/edit held in the order's shop"

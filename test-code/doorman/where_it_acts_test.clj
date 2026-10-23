@@ -204,7 +204,7 @@
   (run-sql! owner-pool (str "INSERT INTO orders VALUES ('" order-a "', '" shop-a "'), ('" order-b "', '" shop-b "')"))
   (run-sql! owner-pool (str "INSERT INTO ledger_entries VALUES ('" ledger-a "', '" shop-a "', '" order-a "', 10)"))
   (run-sql! owner-pool (str "INSERT INTO workstations VALUES ('" station-a "', '" shop-a "', 'oven'), ('" station-b "', '" shop-b "', 'booth')"))
-  (cellar/run-in-transaction! owner-pool {:read-only? false}
+  (cellar/run-in-transaction! owner-pool {:read-only? false :log nil}
                               (fn [transaction]
                                 (doorman/add-scope! transaction scope-kinds :shop shop-a paul nil)
                                 (doorman/add-scope! transaction scope-kinds :shop shop-b paul nil)
@@ -284,13 +284,13 @@
           (testing "a suspended shop's own row is frozen for its own kind's actions"
             (let [shop-c-row #(first (cellar/find-rows owner-pool (query (str "SELECT shop__name, shop__status FROM shops WHERE shop__id = '" shop-c "'")) {}))
                   as-paul    #(doorman/run-as-asker-of-request! app-pool (request paul)
-                                                                 {:settings settings :read-only? false :scope-kinds scope-kinds} %)]
+                                                                 {:settings settings :read-only? false :scope-kinds scope-kinds :log nil} %)]
               (is (= (refusal :doorman/not-allowed) (ask paul :shops/rename {:shop/id shop-c})) "the check: the Owner can't change its settings")
               (is (= 0 (as-paul #(cellar/run-statement! % (query (str "UPDATE shops SET shop__status = 'open' WHERE shop__id = '" shop-c "'")) {})))
                   "the gate: nor lift the suspension")
               (is (= 1 (as-paul #(count (cellar/find-rows % (query (str "SELECT shop__id FROM shops WHERE shop__id = '" shop-c "'")) {}))))
                   "it still reads")
-              (is (= 1 (doorman/run-as-system! app-pool :billing {:read-only? false}
+              (is (= 1 (doorman/run-as-system! app-pool :billing {:read-only? false :log nil}
                                                #(cellar/run-statement! % (query (str "UPDATE shops SET shop__name = 'billed' WHERE shop__id = '" shop-c "'")) {})))
                   "a named system actor writes it: the denies hold people")
               (is (= {:count 1} (ask sam :shops/lift {:shop/id shop-c})) "the platform's Support lifts it, by an action of another kind")

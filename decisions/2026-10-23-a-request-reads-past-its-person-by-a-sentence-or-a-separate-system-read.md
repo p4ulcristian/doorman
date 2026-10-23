@@ -2,6 +2,8 @@
 
 > The user's decision, 2026-10-23, from Iron Rainbow's port (GROUNDWORK-GAPS.md, P5: 45 system and 73 public endpoints; `with-system` 105 times in 49 files). Builds on [A named system actor is allowed what its sentences give it](2026-10-23-a-named-system-actor-is-allowed-what-its-sentences-give-it.md). Nothing new to build in doorman; this says how apps do it.
 
+> **Changed in part** by [A transaction doorman opens carries its caller's log](2026-10-23-a-transaction-doorman-opens-carries-its-callers-log.md) (2026-10-23, on tidy-up): `run-as-system!`'s options write out `:log` too, `{:read-only? true :log log}`.
+
 **What IR does:** a customer pays once for parts from two shops. The split checkout reads the other order on the same payment and each shop's state block: rows this customer may not see. IR reads them with `with-system`, which reaches everything.
 
 **Decision:** one asker per transaction, and two ways to read past the person:

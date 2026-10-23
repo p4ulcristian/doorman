@@ -165,7 +165,7 @@
   (run-sql! owner-pool (str "INSERT INTO workstations VALUES ('" station-a "', '" shop-a "'), ('" station-b "', '" shop-b "')"))
   (run-sql! owner-pool (str "INSERT INTO batches VALUES ('" batch-88 "', '" shop-a "'), ('" batch-99 "', '" shop-c "')"))
   (run-sql! owner-pool (str "INSERT INTO parts VALUES ('" part-public "', '" shop-a "', true), ('" part-hidden "', '" shop-a "', false)"))
-  (cellar/run-in-transaction! owner-pool {:read-only? false}
+  (cellar/run-in-transaction! owner-pool {:read-only? false :log nil}
                               (fn [transaction]
                                 (doorman/add-scope! transaction scope-kinds :shop shop-a paul nil)
                                 (doorman/add-scope! transaction scope-kinds :shop shop-b paul nil)

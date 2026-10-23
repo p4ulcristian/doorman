@@ -106,7 +106,7 @@
     (with-out-str @(:slow-part (cellar/migrate! owner-pool (test-settings/declare-tables-and-access ready tables scope-kinds) [] test-settings/migrate-options)))
     (cellar/grant-tables-to-role! owner-pool ready "doorman_app"))
   (run-sql! owner-pool (str "INSERT INTO shops VALUES ('" shop-a "'), ('" shop-b "')"))
-  (cellar/run-in-transaction! owner-pool {:read-only? false}
+  (cellar/run-in-transaction! owner-pool {:read-only? false :log nil}
                               (fn [transaction]
                                 (doorman/add-scope! transaction scope-kinds :shop shop-a paul nil)
                                 (doorman/add-scope! transaction scope-kinds :shop shop-b paul nil)
@@ -224,7 +224,7 @@
               (is (= 1 (doorman/delete-ended-tokens! app-pool)))))
 
           (testing "a removed member's token reaches the scope no more; signing out everywhere ends it"
-            (cellar/run-in-transaction! owner-pool {:read-only? false}
+            (cellar/run-in-transaction! owner-pool {:read-only? false :log nil}
                                         #(doorman/remove-membership! % [:shop shop-a] anna))
             (is (= [anna nil #{}] (asker-of (bearer (:text anna-token)))) "still her token")
             (is (= (refusal :doorman/not-found) (ask (bearer (:text anna-token)) :orders/place {:order/shop-id shop-a}))

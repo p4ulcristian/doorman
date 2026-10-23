@@ -102,7 +102,7 @@
   (run-sql! owner-pool (str "INSERT INTO categories VALUES ('" category-a "', '" shop-a "', 'Wheels'), ('" category-universal "', NULL, 'Universal frames')"))
   (run-sql! owner-pool (str "INSERT INTO parts VALUES ('" part-priced "', '" shop-a "', 120, NULL), ('" part-templated "', '" shop-a "', NULL, '" (id 99) "'), "
                             "('" part-bare "', '" shop-a "', NULL, NULL), ('" part-c "', '" shop-c "', NULL, NULL)"))
-  (cellar/run-in-transaction! owner-pool {:read-only? false}
+  (cellar/run-in-transaction! owner-pool {:read-only? false :log nil}
                               (fn [transaction]
                                 (doorman/add-scope! transaction scope-kinds :shop shop-a paul nil)
                                 (doorman/add-scope! transaction scope-kinds :shop shop-c paul nil)
@@ -140,7 +140,7 @@
             (is (= [(str part-priced) (str part-templated) (str part-bare)] (ask nil :prices/all {})) "and now it shows"))
           (testing "a scope's state deny by [:some …]: shop C has a suspension date, so it is frozen"
             (is (= (refusal :doorman/not-allowed) (ask anna :parts/price {:part/id part-c})) "the check")
-            (is (= 0 (doorman/run-as-asker-of-request! app-pool (request anna) {:settings settings :read-only? false :scope-kinds scope-kinds}
+            (is (= 0 (doorman/run-as-asker-of-request! app-pool (request anna) {:settings settings :read-only? false :scope-kinds scope-kinds :log nil}
                                                        #(cellar/run-statement! % (query (str "UPDATE parts SET part__pricing = 1 WHERE part__id = '" part-c "'")) {})))
                 "the gate")
             (run-sql! owner-pool (str "UPDATE shops SET shop__suspended_at = NULL WHERE shop__id = '" shop-c "'"))

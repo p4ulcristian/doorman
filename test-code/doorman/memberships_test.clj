@@ -41,7 +41,7 @@
       (try
         (cellar/run-statement! pool (cellar/make-query-from-sql-text "test" "DROP SCHEMA IF EXISTS doorman CASCADE; DROP SCHEMA IF EXISTS cellar CASCADE") {})
         (with-out-str @(:slow-part (cellar/migrate! pool (test-settings/declare-tables doorman/access-tables) [] test-settings/migrate-options)))
-        (cellar/run-in-transaction! pool {:read-only? false}
+        (cellar/run-in-transaction! pool {:read-only? false :log nil}
           (fn [transaction]
             (doorman/add-scope! transaction scope-kinds :shop shop-7 paul nil)
             (add-member! transaction scope-kinds [:shop shop-7] anna #{"Staff"})

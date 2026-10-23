@@ -88,7 +88,7 @@
       (run-sql! owner-pool (str "INSERT INTO shops VALUES ('" hotcoats "'), ('" other-shop "')"))
       (run-sql! owner-pool (str "INSERT INTO orders VALUES ('" order-1 "', '" hotcoats "', false), ('" order-2 "', '" other-shop "', false)"))
       (let [shop     [:shop hotcoats]
-            roles    (cellar/run-in-transaction! owner-pool {:read-only? false}
+            roles    (cellar/run-in-transaction! owner-pool {:read-only? false :log nil}
                                                  #(do (doorman/add-scope! % scope-kinds :shop other-shop olga nil)
                                                       (doorman/add-scope! % scope-kinds :shop hotcoats paul nil)))
             painter  (get roles "Painter")
@@ -123,7 +123,7 @@
 
           (let [qc-approver (doorman/add-role! owner-pool scope-kinds shop "QC approver" #{:qc/approve})]
             (testing "an extra right is a small role; a member holds a set of roles; Tom holds none yet"
-              (cellar/run-in-transaction! owner-pool {:read-only? false}
+              (cellar/run-in-transaction! owner-pool {:read-only? false :log nil}
                                           (fn [transaction]
                                             (doorman/add-membership! transaction shop anna #{employee qc-approver})
                                             (doorman/add-membership! transaction shop dora #{painter})
