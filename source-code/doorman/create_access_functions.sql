@@ -3,6 +3,7 @@
 --   {"person": "uuid or null", "visitor": "uuid or null", "flags": ["impersonated", …],
 --    "holding": {"shop orders/see": ["scope id", …]},
 --    "moving": {"visitor": "uuid", "person": "uuid"}}       (only while sign-in moves a visitor's rows)
+--   {"system": "postbox"}                                   (only while a named system actor runs, run-as-system!)
 -- and doorman.passing, 'on' only while one of doorman's own functions reads
 -- past the gates (a :via's related rows, a scope's state, a changed row).
 CREATE SCHEMA IF NOT EXISTS doorman;
@@ -15,6 +16,11 @@ $$;
 CREATE OR REPLACE FUNCTION doorman.find_asking_visitor() RETURNS uuid
 LANGUAGE sql STABLE AS $$
   SELECT (NULLIF(current_setting('doorman.asking', true), '')::jsonb ->> 'visitor')::uuid
+$$;
+
+CREATE OR REPLACE FUNCTION doorman.find_asking_system() RETURNS text
+LANGUAGE sql STABLE AS $$
+  SELECT NULLIF(current_setting('doorman.asking', true), '')::jsonb ->> 'system'
 $$;
 
 CREATE OR REPLACE FUNCTION doorman.find_scopes_holding(kind text, action text) RETURNS uuid[]

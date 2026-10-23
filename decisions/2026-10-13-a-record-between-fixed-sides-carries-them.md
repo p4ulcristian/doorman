@@ -1,5 +1,7 @@
 # A record between fixed sides carries them
 
+> **Built** by [Records under records carry their parent's columns](2026-10-23-records-under-records-carry-their-parents-columns.md) (2026-10-23, v0.7.5): a person column is carried down like a scope column.
+
 > **Built in part** (2026-10-23, v0.7.0): the sides as columns and the platform as [a kind of one scope](2026-10-23-a-member-sentence-names-a-column-or-a-kind-of-one-scope-and-what-is-held-there.md); carrying them down to the records under it waits ([Records under records wait for cellar's matching links](2026-10-23-records-under-records-wait-for-cellar.md)).
 
 > Moved from Groundwork (2026-10-22): "Groundwork" there is doorman here where it means access. Who is rung ("the bell") became doorbell's, which tells every open screen by table.

@@ -1,5 +1,7 @@
 # A record of two scopes may have a parent and children
 
+> **Built** by [Records under records carry their parent's columns](2026-10-23-records-under-records-carry-their-parents-columns.md) (2026-10-23, v0.7.5).
+
 > **Waits** for cellar: [Records under records wait for cellar's matching links](2026-10-23-records-under-records-wait-for-cellar.md) (2026-10-23).
 
 > Moved from Groundwork (2026-10-22): "Groundwork" there is doorman here where it means access. Who is rung for a row became doorbell's, which tells every open screen by table.

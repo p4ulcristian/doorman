@@ -43,9 +43,11 @@
    [doorman.leaks :as leaks]
    [doorman.memberships :as memberships]
    [doorman.my-actions :as my-actions]
+   [doorman.parents :as parents]
    [doorman.scope-kinds :as scope-kinds]
    [doorman.sessions :as sessions]
    [doorman.settings :as settings]
+   [doorman.system :as system]
    [cellar.api :as cellar]))
 
 ;; -----------------------------------------------------------------------------
@@ -69,6 +71,8 @@
                [:session/created-at  :time/instant {:default :now}]
                [:session/ends-at     :time/instant]]
    :indexes   [[:session/person-id] [:session/ends-at]]
+   :references []
+   :triggers   []
    :gates     nil
    :on-change nil})
 
@@ -149,6 +153,8 @@
                 [:scope/parent-kind :string {:optional? true}]   ; the scope above it, if any
                 [:scope/parent-id   :uuid   {:optional? true}]]
     :indexes   [[:scope/parent-kind :scope/parent-id]]
+    :references []
+    :triggers   []
     :gates     nil
     :on-change nil}
    {:table     :doorman/roles
@@ -156,6 +162,8 @@
                 [:role/scope-id   :uuid   {:primary-key? true}]
                 [:role/name       :string {:primary-key? true}]]
     :indexes   []
+    :references []
+    :triggers   []
     :gates     nil
     :on-change nil}
    {:table     :doorman/role-actions
@@ -164,6 +172,8 @@
                 [:role-action/role       :string {:primary-key? true}]
                 [:role-action/action     :string {:primary-key? true}]]
     :indexes   []
+    :references []
+    :triggers   []
     :gates     nil
     :on-change nil}
    {:table     :doorman/memberships
@@ -172,6 +182,8 @@
                 [:membership/scope-id   :uuid   {:primary-key? true}]
                 [:membership/role       :string]]
     :indexes   [[:membership/scope-kind :membership/scope-id]]
+    :references []
+    :triggers   []
     :gates     nil
     :on-change nil}])
 
@@ -303,16 +315,22 @@
   "The table maps, each with sentences given :gates (its :operations
    conditions) for cellar to make Postgres's row rules from, and every
    other one :gates nil (no row rules), so each map says its gates. A
-   table that names a scope (references a scope kind's table) must have
-   :access, or :access :public on purpose; otherwise this throws.
+   record under a record (:parent) is given, beside its own :references
+   and :triggers, the link to its parent (a reference over several
+   columns, ON UPDATE CASCADE) and the fill of its carried columns
+   (doorman.parents). A table that names a scope (references a scope
+   kind's table) must have :access, or :access :public on purpose;
+   otherwise this throws.
 
      (cellar/migrate! pool (doorman/put-gates-on-tables tables scope-kinds) changes migrate-options)"
   [tables scope-kinds]
-  (let [conditions (conditions/make-sql-conditions tables scope-kinds)]
+  (let [conditions    (conditions/make-sql-conditions tables scope-kinds)
+        tables-by-key (into {} (map (juxt :table identity)) tables)]
     (mapv (fn [{:keys [table] :as table-map}]
-            (if-let [operations (get-in conditions [table :operations])]
-              (assoc table-map :gates operations)
-              (assoc table-map :gates nil)))
+            (-> (if-let [operations (get-in conditions [table :operations])]
+                  (assoc table-map :gates operations)
+                  (assoc table-map :gates nil))
+                (parents/put-link-and-fill-on-table tables-by-key)))
           tables)))
 
 (def my-actions-answer-shape
@@ -385,6 +403,34 @@
    {:handler … :answer :no-such-handler}."
   [options asker handler-name params]
   (explain/explain-refusal (settings/check-explain-options options) (settings/check-asker asker) handler-name params))
+
+(defn run-as-system!
+  "Runs (f transaction) in one transaction of its own, as a named system
+   actor: code of the app's that runs with nobody asking (a provider's
+   webhook, postbox's functions). The gates hold it like anyone: it reads
+   and writes the rows the sentences give it by name, [:system name] (a
+   :to word, never a person's), the :anyone ones, and the tables without
+   sentences; nothing else. No person, no visitor, no scope held, no
+   session flag; the denies, which hold people, don't hold it. The app's
+   own role runs it, which owns nothing and passes no gate. options, every
+   key required: {:read-only? false}. A transaction handed in is refused.
+
+     ;; on shop-emails: {:allow :shop-emails/mark-bounced :to [:system :postbox]}
+     (doorman/run-as-system! pool :postbox {:read-only? false}
+                             (fn [transaction] (mark-bounced! transaction event)))"
+  [pool system-name options f]
+  (system/run-as-system! pool system-name (settings/check-system-options options) f))
+
+(defn find-system-leaks
+  "The leak test of a named system actor, for an app's own test suite:
+   foreign-ids, {:orders [id …]}, rows its sentences don't give it; each
+   is read, changed and deleted as the actor, in a transaction undone.
+   Returns every row it reached, [{:system :table :id :reached #{:read
+   :update :delete}}]; empty means none.
+
+     (is (= [] (doorman/find-system-leaks pool tables :postbox {:orders [order-of-shop-9]})))"
+  [pool tables system-name foreign-ids]
+  (system/find-system-leaks pool tables system-name foreign-ids))
 
 (defn find-leaks
   "The leak test, for an app's own test suite: every handler (made ready by

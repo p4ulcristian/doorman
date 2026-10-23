@@ -46,14 +46,14 @@
                :denies  []}}))
 
 (def ^:private companies
-  {:table :companies :columns [[:company/id :uuid {:primary-key? true}]] :indexes [] :on-change nil :access :public})
+  {:table :companies :columns [[:company/id :uuid {:primary-key? true}]] :indexes [] :references [] :triggers [] :on-change nil :access :public})
 
 (def ^:private shops
-  {:table :shops :columns [[:shop/id :uuid {:primary-key? true}] [:shop/status :string]] :indexes [] :on-change nil
+  {:table :shops :columns [[:shop/id :uuid {:primary-key? true}] [:shop/status :string]] :indexes [] :references [] :triggers [] :on-change nil
    :access :public})
 
 (def ^:private partners
-  {:table :partners :columns [[:partner/id :uuid {:primary-key? true}]] :indexes [] :on-change nil :access :public})
+  {:table :partners :columns [[:partner/id :uuid {:primary-key? true}]] :indexes [] :references [] :triggers [] :on-change nil :access :public})
 
 (def ^:private orders
   {:table     :orders
@@ -63,6 +63,8 @@
                [:order/visitor-id :uuid {:optional? true}]
                [:order/status :string]]
    :indexes   [[:order/shop-id] [:order/customer-id] [:order/visitor-id]]
+   :references []
+   :triggers   []
    :on-change nil
    :visitor   {:column :order/visitor-id :moves-to :order/customer-id}
    :access    [{:allow #{:orders/see :orders/edit} :to [:member :order/shop-id]}
@@ -83,6 +85,8 @@
                [:agreement/status :string]
                [:agreement/note :string]]
    :indexes   [[:agreement/shop-id] [:agreement/partner-id]]
+   :references []
+   :triggers   []
    :on-change nil
    :access    [{:allow #{:agreements/see :agreements/accept} :to [:member :agreement/partner-id]}
                {:allow :agreements/make :to [:member :agreement/shop-id]}]})

@@ -29,6 +29,8 @@
   {:table     :shops
    :columns   [[:shop/id :uuid {:primary-key? true}]]
    :indexes   []
+   :references []
+   :triggers   []
    :on-change nil
    :access    :public})
 
@@ -37,6 +39,8 @@
    :columns   [[:order/id :uuid {:primary-key? true :default :random-uuid}]
                [:order/shop-id :uuid {:references :shop/id}]]
    :indexes   []
+   :references []
+   :triggers   []
    :on-change nil
    :access    [{:allow #{:orders/see :orders/edit} :to [:member :order/shop-id]}]})
 

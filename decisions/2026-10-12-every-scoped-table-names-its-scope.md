@@ -1,5 +1,7 @@
 # Every scoped table names its scope
 
+> **Built** by [Records under records carry their parent's columns](2026-10-23-records-under-records-carry-their-parents-columns.md) (2026-10-23, v0.7.5): the column, the link and the fill; doorman doesn't find tables that should say `:parent` and don't.
+
 > **Waits** for cellar: [Records under records wait for cellar's matching links](2026-10-23-records-under-records-wait-for-cellar.md) (2026-10-23).
 
 **Decision:** every table whose rows belong to a scope has its own scope column, however deep it sits (a job photo names its shop, not only its job). It is tied to the parent by a matching link: the child's (parent, scope) pair must match the parent's own, so the copy can never disagree. Groundwork checks at start that each table in the permission description has the column and the link, and refuses to start otherwise. It also installs, at start, a rule that fills the scope from the parent when a row is inserted, so the app's SQL never mentions it; and the link carries a parent's scope change down to its children in the same transaction.

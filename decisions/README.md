@@ -12,6 +12,7 @@ The ones dated before 2026-10-22, sessions v1 and the five access pieces were ma
 - [Sessions for visitors, and none for servers](2026-10-12-sessions-for-visitors-and-none-for-servers.md), moved from Groundwork (its sessions part), built by [Visitors get sessions of their own](2026-10-23-visitors-get-sessions-and-their-rows-move-at-sign-in.md)
 - [sessions v1: signed-in sessions, a step to find them](2026-10-22-sessions-v1.md), changed in part by [doorman is its own library](2026-10-22-doorman-is-its-own-library.md), [The session step adds the person to the message's log](2026-10-22-the-session-step-adds-the-person-to-the-log.md) and [Visitors get sessions of their own](2026-10-23-visitors-get-sessions-and-their-rows-move-at-sign-in.md)
 - [Visitors get sessions of their own, and their rows move to the person at sign-in](2026-10-23-visitors-get-sessions-and-their-rows-move-at-sign-in.md)
+- [doorman.sessions of v0.6 becomes v0.7's by cellar's plan alone](2026-10-23-doorman-sessions-of-v0-6-becomes-v0-7s-by-cellars-plan-alone.md)
 
 ## What may they do
 
@@ -20,7 +21,7 @@ The ones dated before 2026-10-22, sessions v1 and the five access pieces were ma
 - [Access rules are sentences in doorman's language](2026-10-17-access-rules-are-sentences-in-doormans-language.md), moved from Groundwork, changed in part by Groundwork's "A table is one map"
 - [A record of two scopes may have a parent and children](2026-10-13-a-record-of-two-scopes-may-have-a-parent-and-children.md), moved from Groundwork, changed in part by [Access rules are sentences in doorman's language](2026-10-17-access-rules-are-sentences-in-doormans-language.md)
 - [A record between fixed sides carries them](2026-10-13-a-record-between-fixed-sides-carries-them.md), moved from Groundwork, changed in part by [Access rules are sentences in doorman's language](2026-10-17-access-rules-are-sentences-in-doormans-language.md)
-- [Every scoped table names its scope](2026-10-12-every-scoped-table-names-its-scope.md), waits for cellar: [Records under records wait for cellar's matching links](2026-10-23-records-under-records-wait-for-cellar.md)
+- [Every scoped table names its scope](2026-10-12-every-scoped-table-names-its-scope.md), built by [Records under records carry their parent's columns](2026-10-23-records-under-records-carry-their-parents-columns.md)
 - [A record may wait for its scope](2026-10-13-a-record-may-wait-for-its-scope.md), changed in part by [Shared rows may belong to nobody](2026-10-16-shared-rows-may-belong-to-nobody.md)
 - [A record can belong to a visitor](2026-10-13-a-record-can-belong-to-a-visitor.md), changed in part by [Access rules are sentences in doorman's language](2026-10-17-access-rules-are-sentences-in-doormans-language.md)
 - [Shared rows may belong to nobody](2026-10-16-shared-rows-may-belong-to-nobody.md)
@@ -41,7 +42,9 @@ The ones dated before 2026-10-22, sessions v1 and the five access pieces were ma
 - [doorman reads past its gates only inside its own functions](2026-10-23-doorman-reads-past-its-gates-only-inside-its-own-functions.md)
 - [A list is narrowed by an action through a function per action and table](2026-10-23-a-list-is-narrowed-by-an-action-through-a-function-per-action-and-table.md)
 - [explain-refusal answers why, as plain data](2026-10-23-explain-refusal-answers-why-as-plain-data.md)
-- [Records under records wait for cellar's matching links](2026-10-23-records-under-records-wait-for-cellar.md)
+- [Records under records wait for cellar's matching links](2026-10-23-records-under-records-wait-for-cellar.md), replaced by [Records under records carry their parent's columns, by cellar's link and a fill](2026-10-23-records-under-records-carry-their-parents-columns.md)
+- [Records under records carry their parent's columns, by cellar's link and a fill](2026-10-23-records-under-records-carry-their-parents-columns.md)
+- [A named system actor is allowed what its sentences give it, through the gates](2026-10-23-a-named-system-actor-is-allowed-what-its-sentences-give-it.md)
 
 ## The library
 

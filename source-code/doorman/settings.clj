@@ -94,6 +94,12 @@
    [:find-session-step [:map [:name :keyword] [:enter fn?]]]
    [:rate-limit [:maybe [:map {:closed true} [:max [:int {:min 1}]] [:per-ms [:int {:min 1}]]]]]])
 
+(def system-options-shape
+  "run-as-system!'s options, every key required.
+   :read-only?: true, Postgres refuses every write in its transaction."
+  [:map {:closed true}
+   [:read-only? :boolean]])
+
 (def leak-options-shape
   "find-leaks's options, every key required: malli's generator makes each
    handler's other params from its :params-shape.
@@ -149,6 +155,11 @@
   "Returns the options; throws with every problem at once."
   [options]
   (check-data-for-shape "The options" :doorman/bad-options my-actions-options-shape options))
+
+(defn check-system-options
+  "Returns the options; throws with every problem at once."
+  [options]
+  (check-data-for-shape "The options" :doorman/bad-options system-options-shape options))
 
 (defn check-leak-options
   "Returns the options; throws with every problem at once."

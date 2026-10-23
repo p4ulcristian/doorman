@@ -13,6 +13,9 @@
      statement.
    - doorman.\"may <action> on <table>\"(): the ids of a table's rows the
      asker may do an action on; it runs as the caller, behind the gates.
+   - doorman.fill_…(): a record under a record, its carried columns set
+     from its parent's row before an insert or a change of its parent
+     (doorman.parents).
 
    The first three read past the gates: doorman.passing is 'on' only while
    they read, then back to what it was; an error ends the transaction, and
@@ -22,6 +25,7 @@
    [clojure.string :as str]
    [cellar.api :as cellar]
    [doorman.conditions :as conditions]
+   [doorman.parents :as parents]
    [doorman.scope-kinds :as scope-kinds]
    [doorman.sentences :as sentences]))
 
@@ -120,4 +124,6 @@
           (for [table tables
                 :when (and (sequential? (:access table)) (= 1 (count (sentences/find-primary-key-columns table))))
                 [action condition] (sort-by (comp str key) (get-in conditions [(:table table) :actions]))]
-            (make-may-function-statement table action condition))))))
+            (make-may-function-statement table action condition))
+          (for [table tables :when (:parent table)]
+            (parents/make-fill-function-statement table tables-by-key))))))

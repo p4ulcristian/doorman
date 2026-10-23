@@ -92,6 +92,7 @@
   (cond (= :anyone way)    true
         (= :signed-in way) (some? person-id)
         (= :visitor way)   (and (nil? person-id) (some? visitor-id))
+        (and (vector? way) (= :system (first way))) false
         (vector? way)      (boolean (some #(contains? % (second way)) (vals actions)))
         :else              false))
 

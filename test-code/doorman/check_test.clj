@@ -25,6 +25,8 @@
   {:table     :shops
    :columns   [[:shop/id :uuid {:primary-key? true}]]
    :indexes   []
+   :references []
+   :triggers   []
    :gates     nil
    :on-change nil})
 
@@ -33,6 +35,8 @@
    :columns   [[:order/id :uuid {:primary-key? true}]
                [:order/shop-id :uuid {:references :shop/id}]]
    :indexes   []
+   :references []
+   :triggers   []
    :gates     nil
    :on-change nil
    :access    [{:allow :orders/see :to [:member :order/shop-id]}]})

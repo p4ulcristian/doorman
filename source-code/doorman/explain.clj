@@ -48,6 +48,7 @@
   [to action table row actions-by-scope {:keys [tables-by-key scope-kinds]} holds?]
   (cond
     (#{:anyone :signed-in} to) {:says to :holds? holds?}
+    (= :system (first to)) {:says to :holds? holds? :system (second to)}
     (= :me (first to))
     {:says to :holds? holds? :column (second to) :value (get row (second to))
      :asker-is (if (= (second to) (sentences/find-visitor-column table)) :visitor :person)}

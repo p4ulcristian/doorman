@@ -49,8 +49,10 @@ step's lines say who asked
 | what | `make-sql-conditions` | the sentences, checked, as SQL: one condition per action and per operation, the denies in them |
 | what | `install-access-functions!` | the SQL functions the check and the gates call, and those the app's sentences and denies need (a `:via`'s, a scope state's, the guard's, `doorman."may <action> on <table>"()`), before migrate |
 | what | `put-access-into-handlers` | the check in front of every handler's steps, which run in a transaction that knows who is asking |
-| what | `put-gates-on-tables` | the table maps with their gates, `:gates nil` on the ungated ones, for cellar |
+| what | `put-gates-on-tables` | the table maps with their gates, `:gates nil` on the ungated ones, and a record under a record (`:parent`) given its link to the parent and the fill of its carried columns, for cellar |
 | what | `find-leaks` | the leak test, for the app's own tests, by the app's wire and log (`:wire`, `:log`) |
+| what | `run-as-system!` | `(f transaction)` as a named system actor (a webhook's function): the rows the sentences give it by `[:system name]`, the open ones and the ungated tables, nothing else; the app's own role, no role that passes the gates |
+| what | `find-system-leaks` | the leak test of a system actor: the rows it must not reach, read, changed and deleted as it, undone |
 | what | `explain-refusal` | why a message would be refused, as data: the check's answer, the record's scopes, the asker's roles and actions there, each sentence's parts and the denies; read-only, for a REPL |
 
 Nothing has a default: every setting and option is written out; a missing
@@ -93,6 +95,8 @@ every key mailroom reads (`:steps :params-shape :answer-shape :rate-limit
                [:order/visitor-id :uuid {:optional? true}]
                [:order/status :string]]
    :indexes   [[:order/shop-id]]
+   :references []
+   :triggers   []
    :on-change nil
    :visitor   {:column :order/visitor-id :moves-to :order/customer-id}   ; moved at sign-in
    :access    [{:allow #{:orders/see :orders/edit} :to [:member :order/shop-id]}
@@ -154,12 +158,20 @@ every key mailroom reads (`:steps :params-shape :answer-shape :rate-limit
 The words of a sentence: `:to` is `:anyone`, `:signed-in`, `[:member
 column]` or `[:member <kind of one scope>]` (either with the action held
 there as a third element), `[:me column]` (the person, or the visitor for
-the table's `:visitor` column), or `:via {…}` instead of `:to`; `:when` is
+the table's `:visitor` column), `[:system name]` (a named system actor,
+`run-as-system!`, never a person;
+[why](decisions/2026-10-23-a-named-system-actor-is-allowed-what-its-sentences-give-it.md)),
+or `:via {…}` instead of `:to`; `:when` is
 `[:= col v]`, `[:not= col v]`, `[:in col [vs]]`, `[:none col]`, `[:and …]`,
 `[:or …]`. A list narrowed to the rows the asker may do an action on:
 `WHERE order__id IN (SELECT * FROM doorman."may orders/edit on orders"())`.
-A record's parent (a job carrying its order's shop) waits for cellar
-([why](decisions/2026-10-23-records-under-records-wait-for-cellar.md)).
+A record under a record carries its parent's columns: the table map says
+`:parent {:column :job/order-id :carries {:job/shop-id :order/shop-id}}`,
+and `put-gates-on-tables` gives it cellar's link to the parent (`ON UPDATE
+CASCADE`: a parent's change is carried down by Postgres, past the gates)
+and a fill of the carried columns on insert, so the app's SQL never names
+them and its sentences compare the child's own column
+([why](decisions/2026-10-23-records-under-records-carry-their-parents-columns.md)).
 
 ## Tests
 
@@ -176,7 +188,9 @@ pg_ctl -D /tmp/doorman-pg stop
 A gate refusing a row and a write in a read-only transaction log their
 errors during the tests; that is expected. The tests need a superuser
 for `DOORMAN_TEST_USER` (it makes the role `doorman_app`, which owns
-nothing, and writes the test rows past the gates).
+nothing, and `doorman_owner`, not a superuser, which owns the tables of
+the system actor's and the records-under-records tests, as in production;
+and it writes the test rows past the gates).
 
 Why it is the way it is: [`decisions/`](decisions/README.md).
 

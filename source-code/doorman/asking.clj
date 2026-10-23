@@ -40,6 +40,12 @@
   (cellar/find-one-row transaction set-asking
                        {:asking (json/write-value-as-string {:moving {:visitor (str visitor-id) :person (str person-id)}})}))
 
+(defn set-system!
+  "Tells Postgres, for this transaction, that a named system actor is
+   asking; no person, no visitor, no scope held."
+  [transaction system-name]
+  (cellar/find-one-row transaction set-asking {:asking (json/write-value-as-string {:system (name system-name)})}))
+
 (defn set-passing!
   "Reads past the gates for the rest of this transaction: for a read-only
    look (explain-refusal), never for a handler's steps."

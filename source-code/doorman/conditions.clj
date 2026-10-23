@@ -16,6 +16,7 @@
   (:require
    [clojure.string :as str]
    [cellar.api :as cellar]
+   [doorman.parents :as parents]
    [doorman.scope-kinds :as scope-kinds]
    [doorman.sentences :as sentences]))
 
@@ -34,18 +35,10 @@
 ;; -----------------------------------------------------------------------------
 ;; Checking
 
-(defn find-indexed-column-lists
-  "The column lists a table has an index on: its :indexes, its primary
-   key, and each :unique? column."
-  [{:keys [indexes columns] :as table}]
-  (concat indexes
-          [(sentences/find-primary-key-columns table)]
-          (for [[k _ options] columns :when (:unique? options)] [k])))
-
 (defn is-indexed?
   "Whether an index of the table starts with these columns, in any order."
   [table columns]
-  (boolean (some #(= (set columns) (set (take (count columns) %))) (find-indexed-column-lists table))))
+  (sentences/is-indexed? table columns))
 
 (defn- find-who-problems
   "A :to word said on a table: [problem …]."
@@ -53,6 +46,10 @@
   (let [columns (set (map first (:columns table)))]
     (cond
       (#{:anyone :signed-in} to) nil
+
+      (and (vector? to) (= :system (first to)) (= 2 (count to)))
+      (when-not (and (simple-keyword? (second to)) (re-matches #"[a-z0-9-]+" (name (second to))))
+        [(str where ": [:system " (pr-str (second to)) "] names a system actor by a keyword without a namespace, like :postbox")])
 
       (and (vector? to) (= :me (first to)) (= 2 (count to)))
       (when-not (contains? columns (second to))
@@ -114,6 +111,8 @@
        (for [c (keys match) :when (not (contains? mine c))] (str where ": " c " is no column of " (:table row-table)))
        (for [c (vals match) :when (not (contains? theirs c))] (str where ": " c " is no column of " table))
        (when-not (contains? via :to) [(str where ": :via needs :to, who must hold on the related row")])
+       (when (and (vector? to) (= :system (first to)))
+         [(str where ": a :via's :to is who asks through the related row; a system actor is named by the sentence's own :to")])
        (when (contains? via :to) (find-who-problems (str where ", on the related row") to action other place))
        (when (and (vector? to) (= :member (first to)) (not= 3 (count to)))
          [(str where ": a :via's [:member …] names the action held on the related row, [:member " (second to) " <action>]")])
@@ -172,6 +171,7 @@
   (let [columns (set (map first (:columns table)))
         visitor (:visitor table)]
     (concat
+     (parents/find-problems-of-parent table (into {} (map (juxt :table identity)) tables))
      (when (and (nil? (:access table)) (names-a-scope? table tables scope-kinds))
        [(str (:table table) " names a scope but has no :access: say who may see it, or :access :public")])
      (when (contains? table :visitor)
@@ -323,22 +323,35 @@
       (str "(" v " = (SELECT doorman.find_moving_visitor()) OR (" v " IS NULL AND "
            p " = (SELECT doorman.find_moving_person())))"))))
 
+(defn- join-sentences-with-or
+  "Sentences of an action as SQL joined by OR, or nil for none."
+  [sentences action place]
+  (when (seq sentences)
+    (str/join " OR " (map #(sentences/turn-sentence-into-sql % action place) sentences))))
+
 (defn- make-conditions-of-table [table place actions-do tables]
   (let [place        (assoc place :table table)
         actions      (set (mapcat sentences/find-allowed-actions (:access table)))
-        base         (into {} (for [action actions]
-                                [action (str/join " OR " (map #(sentences/turn-sentence-into-sql % action place)
-                                                              (sentences/find-sentences-of-action table action)))]))
+        ;; the denies hold people (a session's flag, a scope's state); a
+        ;; named system actor has no session and lifts a state, so its
+        ;; sentences stand beside them
+        base         (into {} (for [action actions
+                                    :let [all (sentences/find-sentences-of-action table action)]]
+                                [action {:people (join-sentences-with-or (remove sentences/is-system-sentence? all) action place)
+                                         :system (join-sentences-with-or (filter sentences/is-system-sentence? all) action place)}]))
+        condition-of (fn [action op]
+                       (let [{:keys [people system]} (get base action)]
+                         (join-with-or (remove nil? [(when people (add-denies people action op table place)) system]))))
         for-op       (fn [op] (join-actions-with-or (for [action (sort-by str actions)
                                                   :when (contains? (get actions-do action) op)]
-                                              (add-denies (get base action) action op table place))))
+                                              (condition-of action op))))
         moving       (make-moving-branch table)
         guard        (find-guard (:table table) tables)
         update-gate  (let [updates (for-op :update)]
                        (if (and guard (not= "false" updates))
                          (str "(" updates ") AND " (turn-guard-into-sql (:table table) guard table (for-op :insert)))
                          updates))]
-    {:actions    (into {} (for [action actions] [action (add-denies (get base action) action nil table place)]))
+    {:actions    (into {} (for [action actions] [action (condition-of action nil)]))
      :operations {:read   (join-with-or (remove #(or (nil? %) (= "false" %)) ["(SELECT doorman.is_passing())" moving (for-op :read)]))
                   :insert (for-op :insert)
                   :update (join-with-or (remove #(or (nil? %) (= "false" %)) [moving update-gate]))

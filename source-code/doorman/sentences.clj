@@ -11,7 +11,8 @@
                                :to    [:member :agreement/partner-id :agreements/see]
                                :when  [:= :agreement/status \"active\"]}}
 
-   :to    :anyone, :signed-in, [:member column] (a member of the scope the
+   :to    :anyone, :signed-in, [:system name] (the named system actor,
+          run-as-system!, never a person: a webhook's function), [:member column] (a member of the scope the
           column names, whose role holds the action), [:member kind] (of the
           one scope of a kind that has exactly one), either with a third
           element, the action they must hold there (the sentence's own
@@ -49,6 +50,19 @@
   "The table's primary key columns, in the order of its :columns."
   [{:keys [columns]}]
   (vec (keep (fn [[k _ options]] (when (:primary-key? options) k)) columns)))
+
+(defn find-indexed-column-lists
+  "The column lists a table has an index on: its :indexes, its primary
+   key, and each :unique? column."
+  [{:keys [indexes columns] :as table}]
+  (concat indexes
+          [(find-primary-key-columns table)]
+          (for [[k _ options] columns :when (:unique? options)] [k])))
+
+(defn is-indexed?
+  "Whether an index of the table starts with these columns, in any order."
+  [table columns]
+  (boolean (some #(= (set columns) (set (take (count columns) %))) (find-indexed-column-lists table))))
 
 (defn find-column-type [{:keys [columns]} column-key]
   (some (fn [[k type]] (when (= k column-key) type)) columns))
@@ -105,6 +119,8 @@
         (let [kind (find-scope-kind-of-column table x tables-by-key scope-kinds)]
           (str (column-name x) " = ANY ((SELECT doorman.find_scopes_holding(" (quote-text (name kind)) ", " held "))::uuid[])"))
         (str "cardinality((SELECT doorman.find_scopes_holding(" (quote-text (name x)) ", " held "))::uuid[]) > 0")))
+    (= :system (first to))
+    (str "(SELECT doorman.find_asking_system()) = " (quote-text (name (second to))))
     (= :me (first to))
     (str (column-name (second to))
          (if (= (second to) (find-visitor-column table))
@@ -185,13 +201,20 @@
   [table action]
   (filter #(contains? (find-allowed-actions %) action) (when (sequential? (:access table)) (:access table))))
 
+(defn is-system-sentence?
+  "Whether a sentence gives its actions to a named system actor."
+  [{:keys [to]}]
+  (and (vector? to) (= :system (first to))))
+
 (defn find-way-of-who
   "How a who word can be had without a row to look at: :anyone,
-   :signed-in, :visitor (a [:me …] of a visitor column), or [:holds action]
-   (a member holding that action somewhere)."
+   :signed-in, :visitor (a [:me …] of a visitor column), [:holds action]
+   (a member holding that action somewhere), or [:system name] (only the
+   named system actor, never a person or a visitor)."
   [to action table]
   (cond (= :anyone to)       :anyone
         (= :signed-in to)    :signed-in
+        (= :system (first to)) to
         (= :me (first to))   (if (= (second to) (find-visitor-column table)) :visitor :signed-in)
         (= :member (first to)) [:holds (find-held-action to action)]))
 

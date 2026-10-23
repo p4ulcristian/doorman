@@ -25,12 +25,14 @@
            :parent  nil :single? false :denies []}}))
 
 (def ^:private shops
-  {:table :shops :columns [[:shop/id :uuid {:primary-key? true}]] :indexes [] :gates nil :on-change nil :access :public})
+  {:table :shops :columns [[:shop/id :uuid {:primary-key? true}]] :indexes [] :references [] :triggers [] :gates nil :on-change nil :access :public})
 
 (def ^:private orders
   {:table     :orders
    :columns   [[:order/id :uuid {:primary-key? true}] [:order/shop-id :uuid {:references :shop/id}]]
    :indexes   []
+   :references []
+   :triggers   []
    :gates     nil
    :on-change nil
    :access    [{:allow #{:orders/see :orders/edit} :to [:member :order/shop-id]}]})
@@ -39,6 +41,8 @@
   {:table     :posts
    :columns   [[:post/id :uuid {:primary-key? true}] [:post/status :string]]
    :indexes   []
+   :references []
+   :triggers   []
    :gates     nil
    :on-change nil
    :access    [{:allow :posts/read :to :anyone}
@@ -48,6 +52,8 @@
   {:table     :profiles
    :columns   [[:profile/id :uuid {:primary-key? true}] [:profile/person-id :uuid]]
    :indexes   []
+   :references []
+   :triggers   []
    :gates     nil
    :on-change nil
    :access    [{:allow :profile/edit :to [:me :profile/person-id]}]})
