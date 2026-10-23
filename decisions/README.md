@@ -7,7 +7,8 @@ The ones dated before 2026-10-22, sessions v1 and the five access pieces were ma
 ## Who is asking
 
 - [Sessions live in Postgres](2026-10-12-sessions-live-in-postgres.md), changed in part by [doorman is its own library](2026-10-22-doorman-is-its-own-library.md)
-- [The session is the only truth](2026-10-12-the-session-is-the-only-truth.md)
+- [The session is the only truth](2026-10-12-the-session-is-the-only-truth.md), changed in part by [doorman owns a person's tokens, and only sign-in names a person](2026-10-23-doorman-owns-tokens-and-only-sign-in-names-a-person.md)
+- [doorman owns a person's tokens, and only sign-in names a person](2026-10-23-doorman-owns-tokens-and-only-sign-in-names-a-person.md) (not built yet)
 - [doorman ships no logins](2026-10-12-doorman-ships-no-logins.md), moved from Groundwork
 - [Sessions for visitors, and none for servers](2026-10-12-sessions-for-visitors-and-none-for-servers.md), moved from Groundwork (its sessions part), built by [Visitors get sessions of their own](2026-10-23-visitors-get-sessions-and-their-rows-move-at-sign-in.md)
 - [sessions v1: signed-in sessions, a step to find them](2026-10-22-sessions-v1.md), changed in part by [doorman is its own library](2026-10-22-doorman-is-its-own-library.md), [The session step adds the person to the message's log](2026-10-22-the-session-step-adds-the-person-to-the-log.md) and [Visitors get sessions of their own](2026-10-23-visitors-get-sessions-and-their-rows-move-at-sign-in.md)
