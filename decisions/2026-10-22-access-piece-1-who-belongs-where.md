@@ -1,5 +1,7 @@
 # access, piece 1: who belongs where
 
+> **Changed in part** by [Roles have ids, and a member holds a set of roles](2026-10-23-roles-have-ids-and-a-member-holds-a-set-of-roles.md) (2026-10-23, built on tidy-up, not released): a role has an id and a name unique in its scope; a membership holds a set of role ids, `#{}` for none yet.
+
 > **Changed in part** by [A scope may sit under a parent scope, and a membership counts below it](2026-10-23-a-scope-may-sit-under-a-parent-scope.md) and [A scope kind writes out every key](2026-10-23-a-scope-kind-writes-out-every-key.md) (2026-10-23, v0.7.0): parent scopes are in, `add-scope!` takes the parent's id; a kind writes out `:table :parent :single? :actions :roles :denies`.
 
 > **Added to** by ["What may I do?" is a handler for the browser; open actions are listed for every scope](2026-10-23-what-may-i-do-is-a-handler-for-the-browser.md) (2026-10-23, v0.4.0): `make-my-actions-handler`, a person's actions for the browser, with the open ones.

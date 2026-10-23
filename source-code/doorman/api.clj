@@ -18,9 +18,11 @@
    under a company, a back office of one scope), their actions, the roles
    a new scope starts with and the denies (a session flag, a scope's
    state) (check-scope-kinds). doorman keeps, as rows: the scopes (the
-   app's own row ids, under a parent scope or none), each scope's roles,
-   and the memberships (a person in a scope, with one role there, which
-   counts in the scopes below it). A scope's \"Owner\" holds every action
+   app's own row ids, under a parent scope or none), each scope's roles
+   (an id, a name unique in the scope, its actions), and the memberships
+   (a person in a scope, holding a set of its roles, #{} for none yet,
+   which counts in the scopes below it); a person's actions in a scope
+   are the union of their roles'. A scope's \"Owner\" holds every action
    of its kind and the kinds below. The :access sentences on the app's
    table maps become SQL conditions (make-sql-conditions): the check in
    front of every handler's steps (put-access-into-handlers), and the
@@ -33,8 +35,8 @@
      (def ready (doorman/put-access-into-handlers handlers {:pool pool :tables tables :scope-kinds scope-kinds
                                                             :find-session-step find-session}))
 
-     (doorman/add-scope! transaction scope-kinds :shop shop-id founder-id nil)
-     (doorman/add-membership! transaction [:shop shop-id] anna-id \"Staff\")
+     (let [roles (doorman/add-scope! transaction scope-kinds :shop shop-id founder-id nil)]
+       (doorman/add-membership! transaction [:shop shop-id] anna-id #{(get roles \"Staff\")}))
      (doorman/list-actions-of-person transaction scope-kinds anna-id)
      ;=> {[:shop #uuid \"…\"] #{:orders/see :orders/edit}}
 
@@ -225,7 +227,9 @@
 ;; What may they do
 
 (def access-tables
-  "The scopes, their roles and actions, and the memberships, in doorman's folder."
+  "The scopes, their roles (an id, a name unique in the scope) and the
+   actions each allows, the memberships and the roles each holds, in
+   doorman's folder."
   [{:table     :doorman/scopes
     :columns   [[:scope/kind        :string {:primary-key? true}]
                 [:scope/id          :uuid   {:primary-key? true}]
@@ -237,6 +241,50 @@
     :gates     nil
     :on-change nil}
    {:table     :doorman/roles
+    :columns   [[:role/id         :uuid   {:primary-key? true}]
+                [:role/scope-kind :string]
+                [:role/scope-id   :uuid]
+                [:role/name       :string]]                       ; unique in its scope: doorman's functions keep it so
+    :indexes   [[:role/scope-kind :role/scope-id]]
+    :references []
+    :triggers   []
+    :gates     nil
+    :on-change nil}
+   {:table     :doorman/role-actions
+    :columns   [[:role-action/role-id :uuid   {:primary-key? true :references :role/id}]
+                [:role-action/action  :string {:primary-key? true}]]
+    :indexes   []
+    :references []
+    :triggers   []
+    :gates     nil
+    :on-change nil}
+   {:table     :doorman/memberships
+    :columns   [[:membership/person-id  :uuid   {:primary-key? true}]
+                [:membership/scope-kind :string {:primary-key? true}]
+                [:membership/scope-id   :uuid   {:primary-key? true}]]
+    :indexes   [[:membership/scope-kind :membership/scope-id]]
+    :references []
+    :triggers   []
+    :gates     nil
+    :on-change nil}
+   {:table     :doorman/membership-roles                           ; none for a member with no role yet
+    :columns   [[:membership-role/person-id  :uuid   {:primary-key? true}]
+                [:membership-role/scope-kind :string {:primary-key? true}]
+                [:membership-role/scope-id   :uuid   {:primary-key? true}]
+                [:membership-role/role-id    :uuid   {:primary-key? true}]]
+    :indexes   [[:membership-role/role-id]]
+    ;; the role is one of the membership's scope's
+    :references [{:columns   [:membership-role/role-id :membership-role/scope-kind :membership-role/scope-id]
+                  :to        [:role/id :role/scope-kind :role/scope-id]
+                  :on-update :refuse}]
+    :triggers   []
+    :gates     nil
+    :on-change nil}])
+
+(def ^:private access-tables-of-v0-7
+  "v0.7's roles, role actions and memberships (a role was its name, a
+   member held one), under the names the move's first step gives them."
+  [{:table     :doorman/roles-of-v0-7
     :columns   [[:role/scope-kind :string {:primary-key? true}]
                 [:role/scope-id   :uuid   {:primary-key? true}]
                 [:role/name       :string {:primary-key? true}]]
@@ -245,7 +293,7 @@
     :triggers   []
     :gates     nil
     :on-change nil}
-   {:table     :doorman/role-actions
+   {:table     :doorman/role-actions-of-v0-7
     :columns   [[:role-action/scope-kind :string {:primary-key? true}]
                 [:role-action/scope-id   :uuid   {:primary-key? true}]
                 [:role-action/role       :string {:primary-key? true}]
@@ -255,7 +303,7 @@
     :triggers   []
     :gates     nil
     :on-change nil}
-   {:table     :doorman/memberships
+   {:table     :doorman/memberships-of-v0-7
     :columns   [[:membership/person-id  :uuid   {:primary-key? true}]
                 [:membership/scope-kind :string {:primary-key? true}]
                 [:membership/scope-id   :uuid   {:primary-key? true}]
@@ -265,6 +313,42 @@
     :triggers   []
     :gates     nil
     :on-change nil}])
+
+(def access-move-from-v0-7
+  "How a database of doorman v0.7 (a role was its name, a member held
+   one) comes to access-tables, with its rows, by cellar alone, in two
+   migrate! runs, one after the other, before the app starts:
+
+   1. :old-tables and :renames: v0.7's three tables renamed
+      (doorman.roles_of_v0_7, role_actions_of_v0_7, memberships_of_v0_7)
+      and kept, by their maps; today's made beside them, empty.
+   2. :copy-and-drops (after :renames, which stay in the changes): each
+      role copied with an id of its own, its actions with it, each
+      membership's one role name turned into the set holding that role's
+      id; then the old tables dropped. One transaction, cellar's instant
+      part.
+
+     ;; 1.
+     @(:slow-part (cellar/migrate! pool (into tables (:old-tables doorman/access-move-from-v0-7))
+                                   (into changes (:renames doorman/access-move-from-v0-7)) options))
+     ;; 2.
+     (cellar/migrate! pool tables (-> changes (into (:renames doorman/access-move-from-v0-7))
+                                      (into (:copy-and-drops doorman/access-move-from-v0-7)))
+                      options)
+
+   Between the two the new tables are empty: nobody holds anything there,
+   so the app doesn't start before step 2."
+  {:old-tables     access-tables-of-v0-7
+   :renames        [{:id "doorman-2026-10-23-roles-of-v0-7-renamed" :rename-table [:doorman/roles :doorman/roles-of-v0-7]}
+                    {:id "doorman-2026-10-23-role-actions-of-v0-7-renamed" :rename-table [:doorman/role-actions :doorman/role-actions-of-v0-7]}
+                    {:id "doorman-2026-10-23-memberships-of-v0-7-renamed" :rename-table [:doorman/memberships :doorman/memberships-of-v0-7]}]
+   :copy-and-drops [{:id "doorman-2026-10-23-access-rows-of-v0-7-copied" :run-sql-file "doorman/move_access_rows_of_v0_7.sql"}
+                    {:id "doorman-2026-10-23-roles-of-v0-7-dropped" :drop-table :doorman/roles-of-v0-7
+                     :why "roles have ids: its rows are in doorman.roles"}
+                    {:id "doorman-2026-10-23-role-actions-of-v0-7-dropped" :drop-table :doorman/role-actions-of-v0-7
+                     :why "roles have ids: its rows are in doorman.role_actions"}
+                    {:id "doorman-2026-10-23-memberships-of-v0-7-dropped" :drop-table :doorman/memberships-of-v0-7
+                     :why "a member holds a set of roles: its rows are in doorman.memberships and doorman.membership_roles"}]})
 
 (defn check-scope-kinds
   "Returns the app's scope kinds; throws with every problem at once: a
@@ -289,21 +373,76 @@
   (scope-kinds/does-action-only-read? scope-kinds action))
 
 (defn add-role!
-  "Gives a scope a role allowing these actions, each one of the kind's or
-   of a kind below it."
+  "Gives a scope a role: a name, not yet one of the scope's, nor
+   \"Owner\", and a set of actions, each one of the kind's or of a kind
+   below it (#{} for none yet). Returns its id, which memberships hold.
+   Refused (throws): :doorman/role-name-taken, :doorman/owner-role,
+   :doorman/unknown-action, :doorman/bad-role-name, :doorman/bad-actions.
+
+     (doorman/add-role! transaction scope-kinds [:shop shop-id] \"QC approver\" #{:qc/approve})   ;=> #uuid \"…\""
   [transaction scope-kinds scope role-name actions]
   (memberships/add-role! transaction scope-kinds scope role-name actions))
 
+(defn rename-role!
+  "Renames a role of the scope: one row, its members keep it. The new
+   name is no other role's of the scope, nor \"Owner\"; Owner itself is
+   never renamed. Refused (throws): :doorman/unknown-role (not the
+   scope's), :doorman/role-name-taken, :doorman/owner-role,
+   :doorman/bad-role-name. Returns nil.
+
+     (doorman/rename-role! transaction [:shop shop-id] painter-id \"Coater\")"
+  [transaction scope role-id role-name]
+  (memberships/rename-role! transaction scope role-id role-name))
+
+(defn set-role-actions!
+  "The actions a role of the scope allows, in place of its old ones, each
+   one of the kind's or of a kind below it; at once for every member
+   holding it. Owner's are every action, never set. Refused (throws):
+   :doorman/unknown-role, :doorman/owner-role, :doorman/unknown-action,
+   :doorman/bad-actions. Returns nil."
+  [transaction scope-kinds scope role-id actions]
+  (memberships/set-role-actions! transaction scope-kinds scope role-id actions))
+
+(defn remove-role!
+  "Removes a role of the scope that no member holds. Refused (throws):
+   :doorman/role-held while a member holds it ({:role-id :name :held-by
+   n} in its data; take it from them first, set-membership-roles!),
+   :doorman/unknown-role, :doorman/owner-role. Returns nil."
+  [transaction scope role-id]
+  (memberships/remove-role! transaction scope role-id))
+
+(defn list-roles
+  "The scope's roles by name, each with the actions it allows (Owner's:
+   every action of the kind and the kinds below):
+   [{:role-id #uuid \"…\" :name \"Owner\" :actions #{…}} {:role-id … :name \"Staff\" :actions #{:orders/see}}]."
+  [transaction scope-kinds scope]
+  (memberships/list-roles transaction scope-kinds scope))
+
 (defn add-membership!
-  "Puts a person in a scope with one of the scope's roles."
-  [transaction scope person-id role-name]
-  (memberships/add-membership! transaction scope person-id role-name))
+  "Puts a person in a scope, holding a set of the scope's roles there, by
+   their ids: #{} for no role yet. Refused (throws):
+   :doorman/unknown-role (a role not the scope's), :doorman/bad-roles
+   (not a set of ids). Returns nil.
+
+     (doorman/add-membership! transaction [:shop shop-id] anna #{employee-id qc-approver-id})
+     (doorman/add-membership! transaction [:shop shop-id] tom #{})"
+  [transaction scope person-id role-ids]
+  (memberships/add-membership! transaction scope person-id role-ids))
+
+(defn set-membership-roles!
+  "The roles a member holds in the scope, in place of their old ones (#{}
+   for none). Whether they are a member there; nothing changes for one
+   who isn't. Refused (throws): :doorman/unknown-role,
+   :doorman/bad-roles."
+  [transaction scope person-id role-ids]
+  (memberships/set-membership-roles! transaction scope person-id role-ids))
 
 (defn add-scope!
   "Makes a scope of the app's own row: its starting roles, Owner, and the
-   founder as its Owner, under the scope parent-id names (of the kind's
-   :parent kind; nil for none). A kind with :single? true refuses a
-   second scope. Call it in the transaction that makes the row.
+   founder as a member holding Owner, under the scope parent-id names (of
+   the kind's :parent kind; nil for none). A kind with :single? true
+   refuses a second scope. Call it in the transaction that makes the row.
+   Returns the new roles' ids by name, {\"Owner\" #uuid \"…\" \"Staff\" #uuid \"…\"}.
 
      (doorman/add-scope! transaction scope-kinds :shop shop-id founder-id company-id)
      (doorman/add-scope! transaction scope-kinds :company company-id founder-id nil)"
@@ -311,12 +450,14 @@
   (memberships/add-scope! transaction scope-kinds kind scope-id founder-id parent-id))
 
 (defn remove-membership!
-  "Takes a person out of a scope. Whether they were in it."
+  "Takes a person out of a scope, with the roles they held there. Whether
+   they were in it."
   [transaction scope person-id]
   (memberships/remove-membership! transaction scope person-id))
 
 (defn list-actions-of-person
-  "Every scope a person is in, with the actions their role there allows,
+  "Every scope a person is in, with the actions their roles there allow
+   (the union of every role they hold; #{} for a member with none yet),
    and every scope below those, with the actions of its kind (and the
    kinds below it) held above: {[:shop id] #{:orders/see …}}."
   [transaction scope-kinds person-id]
@@ -503,17 +644,21 @@
      ;                                                        ; :doorman/not-allowed :doorman/signed-out
      ;    :record {:table :orders :id #uuid \"…\" :exists? true
      ;             :scopes [{:column :order/shop-id :scope-kind :shop :scope-id #uuid \"…9\"}]}
-     ;    :memberships [{:scope-kind :company :scope-id #uuid \"…\" :role \"Director\"}]   ; there and above
+     ;    :memberships [{:scope-kind :company :scope-id #uuid \"…\"                    ; there and above
+     ;                   :roles [{:role-id #uuid \"…\" :name \"Director\" :actions [:orders/see]}]}]
      ;    :actions-in-scopes [{:scope-kind :shop :scope-id #uuid \"…9\" :actions [:orders/see]}]
      ;    :sentences [{:table :orders :sentence {:allow … :to [:member :order/shop-id]} :holds? false
      ;                 :to {:says [:member :order/shop-id] :holds? false :scope-kind :shop
-     ;                      :scope-id #uuid \"…9\" :needs :orders/edit :held-there? false}
+     ;                      :scope-id #uuid \"…9\" :needs :orders/edit :held-there? false
+     ;                      :given-by []}                     ; the roles there or above giving it: {:scope-kind :scope-id :role-id :name :gives}
      ;                 :when {:says [:= :order/status \"open\"] :holds? true}}]
      ;    :denies [{:scope-kind :shop :deny {:deny :writes :when …} :says-no? false :scope-ids []}]}
 
    A handler with a :record has :scope nil. One with a :scope: :record
    nil, :scope {:says [:shop :shop/id] :scope-kind :shop :scope-id #uuid \"…\"
-   :held-there? true} (or {:says :no-scope}), and each sentence's :way
+   :held-there? true :given-by [{:scope-kind :scope-id :role-id :name
+   :gives}]} (or {:says :no-scope}), :memberships of the named scope
+   (nil for another :scope), and each sentence's :way
    (:anyone :signed-in :visitor [:holds action]) and whether it :holds?
    for the asker (for :no-scope, only an open way can); the :answer is the
    check's. An unknown handler:

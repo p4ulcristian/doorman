@@ -12,6 +12,7 @@
    [doorman.test-answers :refer [refusal refusal-json read-without-request-ids without-request-id]]
    [cellar.api :as cellar]
    [doorman.api :as doorman]
+   [doorman.test-roles :refer [add-member!]]
    [doorman.test-log :refer [log]]
    [doorman.test-settings :as test-settings]
    [doorman.test-wire :refer [wire]]
@@ -211,10 +212,10 @@
                                 (doorman/add-scope! transaction scope-kinds :shop shop-c paul nil)
                                 (doorman/add-scope! transaction scope-kinds :platform platform sam nil)
                                 (doorman/remove-membership! transaction [:platform platform] sam)
-                                (doorman/add-membership! transaction [:platform platform] sam "Support")
-                                (doorman/add-membership! transaction [:shop shop-a] anna "Mechanic")
-                                (doorman/add-membership! transaction [:shop shop-b] anna "Employee")
-                                (doorman/add-membership! transaction [:shop shop-a] bob "Order clerk"))))
+                                (add-member! transaction scope-kinds [:platform platform] sam #{"Support"})
+                                (add-member! transaction scope-kinds [:shop shop-a] anna #{"Mechanic"})
+                                (add-member! transaction scope-kinds [:shop shop-b] anna #{"Employee"})
+                                (add-member! transaction scope-kinds [:shop shop-a] bob #{"Order clerk"}))))
 
 (defn- count-rows [pool text] (count (cellar/find-rows pool (query text) {})))
 
@@ -302,7 +303,8 @@
                                                   {:person-id anna :visitor-id nil :session-flags #{}}
                                                   :machines/create {:machine/shop-id shop-b})]
               (is (= :doorman/not-found (:answer answer)))
-              (is (= {:says [:shop :machine/shop-id] :scope-kind :shop :scope-id shop-b :held-there? false} (:scope answer)))))
+              (is (= {:says [:shop :machine/shop-id] :scope-kind :shop :scope-id shop-b :held-there? false :given-by []} (:scope answer))
+                  "her Employee role in B gives another action")))
 
           (testing "the leak test asks a :scope handler in each foreign scope"
             (let [options {:wire wire :log log :scope-kinds scope-kinds :seed 7 :size 10}]

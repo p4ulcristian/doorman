@@ -5,7 +5,8 @@
    maps say (v0.6.x is the last before the change; the maps as they were,
    with cellar's two newer keys written out empty, which change no table),
    people's sessions written into them, then cellar brings them to
-   today's maps. The rows must survive and work. The Postgres tests run
+   v0.7's maps (today's sessions and tokens; the access tables as v0.7
+   had them, which doorman.roles-migration-test takes on). The rows must survive and work. The Postgres tests run
    when DOORMAN_TEST_PORT is set; they say they were skipped otherwise."
   (:require
    [clojure.string :as str]
@@ -72,6 +73,11 @@
     :gates      nil
     :on-change  nil}])
 
+(def ^:private access-tables-of-v0-7
+  "v0.7's access tables, which this migration reached: v0.6's, doorman.scopes
+   with its parent index. (v0.7 to today's: doorman.roles-migration-test.)"
+  (assoc-in access-tables-of-v0-6 [0 :indexes] [[:scope/parent-kind :scope/parent-id]]))
+
 (def ^:private settings
   {:cookie-name "app_session" :session-days 30 :visitor-session-days 2 :renew-after-minutes 60
    :allowed-origin "https://app.test" :secure-cookie? true
@@ -113,7 +119,7 @@
         (write-session-of-v0-6! pool "anna-old-cookie" anna)
         (write-session-of-v0-6! pool "anna-other-device" anna)
         (write-session-of-v0-6! pool "bob-old-cookie" bob)
-        (let [today (conj doorman/access-tables doorman/sessions-table)
+        (let [today (conj access-tables-of-v0-7 doorman/sessions-table)
               plan  (cellar/make-plan-from-tables pool today [])]
           (testing "cellar's plan has no stop and needs no change entry: two columns added, the person made optional, an index"
             (is (= [] (:stops plan)))

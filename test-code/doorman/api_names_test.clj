@@ -11,7 +11,9 @@
            find-session-key-of-request make-find-session-step run-as-asker-of-request!
            tokens-table make-token! list-tokens revoke-token! delete-ended-tokens!
            ;; what may they do
-           access-tables check-scope-kinds does-action-only-read? add-scope! add-role! add-membership! remove-membership!
+           access-tables access-move-from-v0-7 check-scope-kinds does-action-only-read? add-scope!
+           add-role! rename-role! set-role-actions! remove-role! list-roles
+           add-membership! set-membership-roles! remove-membership!
            list-actions-of-person make-sql-conditions install-access-functions!
            put-access-into-handlers put-gates-on-tables find-leaks explain-refusal
            my-actions-answer-shape make-my-actions-handler refusals

@@ -10,6 +10,7 @@
    [doorman.test-answers :refer [refusal refusal-json read-without-request-ids without-request-id]]
    [cellar.api :as cellar]
    [doorman.api :as doorman]
+   [doorman.test-roles :refer [add-member!]]
    [doorman.asking :as asking]
    [doorman.test-log :refer [log]]
    [doorman.test-settings :as test-settings]
@@ -125,9 +126,9 @@
                               (fn [transaction]
                                 (doseq [shop [shop-7 shop-8 shop-9]]
                                   (doorman/add-scope! transaction scope-kinds :shop shop (id 1) nil))
-                                (doorman/add-membership! transaction [:shop shop-7] anna "Staff")
-                                (doorman/add-membership! transaction [:shop shop-7] mia "Staff")
-                                (doorman/add-membership! transaction [:shop shop-9] mia "Staff")))
+                                (add-member! transaction scope-kinds [:shop shop-7] anna #{"Staff"})
+                                (add-member! transaction scope-kinds [:shop shop-7] mia #{"Staff"})
+                                (add-member! transaction scope-kinds [:shop shop-9] mia #{"Staff"})))
   (run-sql! super-pool (str "INSERT INTO orders VALUES ('" order-42 "', '" shop-7 "'), ('" order-99 "', '" shop-9 "')"))
   (run-sql! super-pool (str "INSERT INTO shop_emails (shop_email__id, shop_email__shop_id, shop_email__address) VALUES "
                             "('" email-7 "', '" shop-7 "', 'seven@shop.test'), ('" email-8 "', '" shop-8 "', 'eight@shop.test')")))

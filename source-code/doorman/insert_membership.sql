@@ -1,3 +1,4 @@
--- A person in a scope, with one role there.
-INSERT INTO doorman.memberships (membership__person_id, membership__scope_kind, membership__scope_id, membership__role)
-VALUES (:membership/person-id, :membership/scope-kind, :membership/scope-id, :membership/role)
+-- A person in a scope; the roles they hold there are rows of
+-- doorman.membership_roles, none for no role yet.
+INSERT INTO doorman.memberships (membership__person_id, membership__scope_kind, membership__scope_id)
+VALUES (:membership/person-id, :membership/scope-kind, :membership/scope-id)

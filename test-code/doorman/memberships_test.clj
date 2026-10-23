@@ -4,6 +4,7 @@
   (:require
    [clojure.test :refer [deftest is testing]]
    [doorman.api :as doorman]
+   [doorman.test-roles :refer [add-member!]]
    [doorman.test-settings :as test-settings]
    [cellar.api :as cellar]))
 
@@ -20,6 +21,7 @@
 (def ^:private anna #uuid "00000000-0000-4000-8000-00000000000b")
 (def ^:private dora #uuid "00000000-0000-4000-8000-00000000000c")
 (def ^:private bob  #uuid "00000000-0000-4000-8000-00000000000d")
+(def ^:private carl #uuid "00000000-0000-4000-8000-00000000000e")
 (def ^:private shop-7 #uuid "70000000-0000-4000-8000-000000000007")
 
 (deftest the-scope-kinds-are-checked
@@ -42,20 +44,23 @@
         (cellar/run-in-transaction! pool {:read-only? false}
           (fn [transaction]
             (doorman/add-scope! transaction scope-kinds :shop shop-7 paul nil)
-            (doorman/add-membership! transaction [:shop shop-7] anna "Staff")
-            (doorman/add-membership! transaction [:shop shop-7] dora "Bookkeeper")))
+            (add-member! transaction scope-kinds [:shop shop-7] anna #{"Staff"})
+            (add-member! transaction scope-kinds [:shop shop-7] dora #{"Bookkeeper"})))
         (testing "each person's actions, by scope"
           (is (= {[:shop shop-7] #{:orders/see :orders/edit}} (doorman/list-actions-of-person pool scope-kinds paul)) "the founder is Owner: everything")
           (is (= {[:shop shop-7] #{:orders/see :orders/edit}} (doorman/list-actions-of-person pool scope-kinds anna)))
           (is (= {[:shop shop-7] #{:orders/see}} (doorman/list-actions-of-person pool scope-kinds dora)))
           (is (= {} (doorman/list-actions-of-person pool scope-kinds bob)) "Bob is in no scope"))
         (testing "a shop makes a role of its own, live"
-          (doorman/add-role! pool scope-kinds [:shop shop-7] "Driver" #{:orders/see})
-          (doorman/add-membership! pool [:shop shop-7] bob "Driver")
-          (is (= {[:shop shop-7] #{:orders/see}} (doorman/list-actions-of-person pool scope-kinds bob))))
+          (let [driver (doorman/add-role! pool scope-kinds [:shop shop-7] "Driver" #{:orders/see})]
+            (is (uuid? driver))
+            (doorman/add-membership! pool [:shop shop-7] bob #{driver})
+            (is (= {[:shop shop-7] #{:orders/see}} (doorman/list-actions-of-person pool scope-kinds bob)))))
         (testing "a role the scope doesn't have, or an action its kind doesn't have, is refused"
-          (is (thrown? clojure.lang.ExceptionInfo (doorman/add-membership! pool [:shop shop-7] bob "Pilot")))
-          (is (thrown? clojure.lang.ExceptionInfo (doorman/add-role! pool scope-kinds [:shop shop-7] "Pilot" #{:orders/fly}))))
+          (is (= :doorman/unknown-role (:type (ex-data (try (doorman/add-membership! pool [:shop shop-7] carl #{(random-uuid)})
+                                                            (catch clojure.lang.ExceptionInfo e e))))))
+          (is (= :doorman/unknown-action (:type (ex-data (try (doorman/add-role! pool scope-kinds [:shop shop-7] "Pilot" #{:orders/fly})
+                                                              (catch clojure.lang.ExceptionInfo e e)))))))
         (testing "leaving a scope"
           (is (true? (doorman/remove-membership! pool [:shop shop-7] dora)))
           (is (= {} (doorman/list-actions-of-person pool scope-kinds dora))))

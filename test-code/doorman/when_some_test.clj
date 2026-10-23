@@ -12,6 +12,7 @@
    [doorman.test-answers :refer [refusal without-request-id]]
    [cellar.api :as cellar]
    [doorman.api :as doorman]
+   [doorman.test-roles :refer [add-member!]]
    [doorman.test-log :refer [log]]
    [doorman.test-settings :as test-settings]
    [doorman.test-wire :refer [wire]]
@@ -106,8 +107,8 @@
                               (fn [transaction]
                                 (doorman/add-scope! transaction scope-kinds :shop shop-a paul nil)
                                 (doorman/add-scope! transaction scope-kinds :shop shop-c paul nil)
-                                (doorman/add-membership! transaction [:shop shop-a] anna "Staff")
-                                (doorman/add-membership! transaction [:shop shop-c] anna "Staff"))))
+                                (add-member! transaction scope-kinds [:shop shop-a] anna #{"Staff"})
+                                (add-member! transaction scope-kinds [:shop shop-c] anna #{"Staff"}))))
 
 (deftest a-when-says-a-column-is-set
   (if-not port

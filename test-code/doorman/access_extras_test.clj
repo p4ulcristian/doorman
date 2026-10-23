@@ -13,6 +13,7 @@
    [doorman.test-answers :refer [refusal refusal-json read-without-request-ids without-request-id]]
    [cellar.api :as cellar]
    [doorman.api :as doorman]
+   [doorman.test-roles :refer [add-member!]]
    [doorman.asking :as asking]
    [doorman.test-log :refer [log]]
    [doorman.test-settings :as test-settings]
@@ -175,18 +176,18 @@
                               (fn [transaction]
                                 (doorman/add-scope! transaction scope-kinds :company company-1 dora nil)
                                 (doorman/remove-membership! transaction [:company company-1] dora)
-                                (doorman/add-membership! transaction [:company company-1] dora "Director")
+                                (add-member! transaction scope-kinds [:company company-1] dora #{"Director"})
                                 (doorman/add-scope! transaction scope-kinds :shop shop-7 paul company-1)
                                 (doorman/add-scope! transaction scope-kinds :shop shop-8 gus nil)
                                 (doorman/add-scope! transaction scope-kinds :shop shop-9 bob nil)
-                                (doorman/add-membership! transaction [:shop shop-7] anna "Staff")
-                                (doorman/add-membership! transaction [:shop shop-7] carl "Clerk")
+                                (add-member! transaction scope-kinds [:shop shop-7] anna #{"Staff"})
+                                (add-member! transaction scope-kinds [:shop shop-7] carl #{"Clerk"})
                                 (doorman/add-scope! transaction scope-kinds :partner partner-1 pia nil)
                                 (doorman/remove-membership! transaction [:partner partner-1] pia)
-                                (doorman/add-membership! transaction [:partner partner-1] pia "Agent")
+                                (add-member! transaction scope-kinds [:partner partner-1] pia #{"Agent"})
                                 (doorman/add-scope! transaction scope-kinds :platform platform sam nil)
                                 (doorman/remove-membership! transaction [:platform platform] sam)
-                                (doorman/add-membership! transaction [:platform platform] sam "Support"))))
+                                (add-member! transaction scope-kinds [:platform platform] sam #{"Support"}))))
 
 (defn- add-orders!
   "The test's rows, written by the tables' owner (a superuser here, which
@@ -421,8 +422,9 @@
               (is (= :doorman/not-found (:answer answer)))
               (is (= {:table :orders :id order-99 :exists? true :scopes [{:column :order/shop-id :scope-kind :shop :scope-id shop-9}]}
                      (:record answer)))
-              (is (= {:says [:member :order/shop-id] :holds? false :scope-kind :shop :scope-id shop-9 :needs :orders/edit :held-there? false}
-                     (:to (first (:sentences answer)))))
+              (is (= {:says [:member :order/shop-id] :holds? false :scope-kind :shop :scope-id shop-9 :needs :orders/edit :held-there? false
+                      :given-by []}
+                     (:to (first (:sentences answer)))) "no role of hers gives it there")
               (is (= [] (:memberships answer)) "Anna is in no scope of order 99"))
             (let [answer (explain {:person-id anna :session-flags #{:impersonated}} :orders/edit {:order/id order-42})]
               (is (= :doorman/not-allowed (:answer answer)))
@@ -435,7 +437,13 @@
               (is (= [shop-8] (:scope-ids (second (:denies answer))))))
             (let [answer (explain {:person-id dora} :orders/one {:order/id order-42})]
               (is (= :allowed (:answer answer)))
-              (is (= [{:scope-kind :company :scope-id company-1 :role "Director"}] (:memberships answer)) "her role, above the shop")
+              (is (= [{:scope-kind :company :scope-id company-1 :roles [{:name "Director" :actions [:company/report :orders/see]}]}]
+                     (mapv (fn [m] (update m :roles #(mapv (fn [role] (dissoc role :role-id)) %))) (:memberships answer)))
+                  "her role, above the shop")
+              (is (uuid? (get-in answer [:memberships 0 :roles 0 :role-id])))
+              (is (= [{:scope-kind :company :scope-id company-1 :name "Director" :gives :orders/see}]
+                     (mapv #(dissoc % :role-id) (:given-by (:to (first (:sentences answer))))))
+                  "the role that gives the action, named")
               (is (= [{:scope-kind :shop :scope-id shop-7 :actions [:orders/see]}] (:actions-in-scopes answer))))
             (let [answer (explain {:person-id pia} :orders/one {:order/id order-99})]
               (is (= {:says (:via (last (:access orders))) :holds? false} (:via (last (:sentences answer))))

@@ -8,6 +8,7 @@
    [clojure.test :refer [deftest is testing]]
    [doorman.test-answers :refer [refusal refusal-json read-without-request-ids without-request-id]]
    [doorman.api :as doorman]
+   [doorman.test-roles :refer [add-member!]]
    [doorman.test-settings :as test-settings]
    [cellar.api :as cellar]
    [doorman.test-log :refer [log]]
@@ -93,7 +94,7 @@
     (fn [transaction]
       (doorman/add-scope! transaction scope-kinds :shop shop-7 paul nil)
       (doorman/add-scope! transaction scope-kinds :shop shop-9 bob nil)
-      (doorman/add-membership! transaction [:shop shop-7] anna "Staff"))))
+      (add-member! transaction scope-kinds [:shop shop-7] anna #{"Staff"}))))
 
 (defn- start-pool! [user]
   (test-settings/start-pool! user 4))

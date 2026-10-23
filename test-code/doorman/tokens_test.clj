@@ -10,6 +10,7 @@
    [doorman.test-answers :refer [refusal refusal-json read-without-request-ids without-request-id]]
    [cellar.api :as cellar]
    [doorman.api :as doorman]
+   [doorman.test-roles :refer [add-member!]]
    [doorman.cookie :as cookie]
    [doorman.test-log :as test-log :refer [log]]
    [doorman.test-settings :as test-settings]
@@ -110,8 +111,8 @@
                               (fn [transaction]
                                 (doorman/add-scope! transaction scope-kinds :shop shop-a paul nil)
                                 (doorman/add-scope! transaction scope-kinds :shop shop-b paul nil)
-                                (doorman/add-membership! transaction [:shop shop-a] anna "Staff")
-                                (doorman/add-membership! transaction [:shop shop-b] bob "Staff"))))
+                                (add-member! transaction scope-kinds [:shop shop-a] anna #{"Staff"})
+                                (add-member! transaction scope-kinds [:shop shop-b] bob #{"Staff"}))))
 
 (defn- count-rows [pool text] (count (cellar/find-rows pool (query text) {})))
 

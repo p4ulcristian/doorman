@@ -46,9 +46,25 @@
              :when kind]
          {:column column :scope-kind kind :scope-id (get row column)})))
 
+(defn- find-roles-giving
+  "The roles the person holds in the scope, or in a scope above it, that
+   give one of the actions there: [{:scope-kind :scope-id :role-id :name
+   :gives action}], the scope's own first. A role above gives only the
+   actions of the scope's kind and the kinds below it."
+  [transaction scope-kinds person-id [kind scope-id] actions]
+  (if (and person-id scope-id)
+    (let [reaching (scope-kinds/find-actions-at-or-below scope-kinds kind)]
+      (vec (for [{:keys [depth roles] :as membership} (memberships/list-memberships-above transaction scope-kinds [kind scope-id] person-id)
+                 {:keys [role-id name] role-actions :actions} roles
+                 action (sort-by str actions)
+                 :when (and (contains? role-actions action) (or (zero? depth) (contains? reaching action)))]
+             {:scope-kind (:scope-kind membership) :scope-id (:scope-id membership) :role-id role-id :name name :gives action})))
+    []))
+
 (defn- explain-to
-  "What a :to word says of the row, and whether it holds."
-  [to action table row actions-by-scope {:keys [tables-by-key scope-kinds]} holds?]
+  "What a :to word says of the row, and whether it holds; a [:member …]
+   names the roles that give what it needs (:given-by)."
+  [to action table row actions-by-scope {:keys [tables-by-key scope-kinds transaction person-id]} holds?]
   (cond
     (#{:anyone :signed-in} to) {:says to :holds? holds?}
     (= :system (first to)) {:says to :holds? holds? :system (second to)}
@@ -62,9 +78,12 @@
         (let [kind  (sentences/find-kind-of-member-column table x tables-by-key scope-kinds)
               scope [kind (get row x)]]
           {:says to :holds? holds? :scope-kind kind :scope-id (get row x) :needs needs
-           :held-there? (contains? (get actions-by-scope scope) needs)})
+           :held-there? (contains? (get actions-by-scope scope) needs)
+           :given-by (find-roles-giving transaction scope-kinds person-id scope #{needs})})
         {:says to :holds? holds? :scope-kind x :needs needs
-         :held-there? (boolean (some (fn [[[kind] actions]] (and (= kind x) (contains? actions needs))) actions-by-scope))}))))
+         :held-there? (boolean (some (fn [[[kind] actions]] (and (= kind x) (contains? actions needs))) actions-by-scope))
+         :given-by (vec (mapcat #(find-roles-giving transaction scope-kinds person-id % #{needs})
+                                (filter #(= x (first %)) (sort-by str (keys actions-by-scope)))))}))))
 
 (defn- explain-sentence [transaction table id row sentence action actions-by-scope place]
   (let [place     (assoc place :table table)
@@ -96,13 +115,16 @@
              {:scope-kind kind :deny deny :says-no? (boolean (seq hits)) :scope-ids (mapv :scope-id hits)})))))
 
 (defn- explain-memberships
-  "The asker's role in each scope the row names and in those above it."
-  [transaction person-id row-scopes]
+  "The asker's memberships of each scope the row names and of those above
+   it, each with the roles held there and their actions ([] for none
+   yet)."
+  [transaction scope-kinds person-id row-scopes]
   (when person-id
     (vec (distinct (for [{:keys [scope-kind scope-id]} row-scopes :when scope-id
-                         membership (memberships/list-memberships-above transaction [scope-kind scope-id] person-id)
-                         :when (:role membership)]
-                     (dissoc membership :depth))))))
+                         {:keys [member? roles] :as membership} (memberships/list-memberships-above transaction scope-kinds [scope-kind scope-id] person-id)
+                         :when member?]
+                     {:scope-kind (:scope-kind membership) :scope-id (:scope-id membership)
+                      :roles      (mapv #(update % :actions (fn [actions] (vec (sort-by str actions)))) roles)})))))
 
 (defn- find-answer [transaction table id action conditions scope-kinds]
   (let [action-sql (get-in conditions [(:table table) :actions action])
@@ -114,14 +136,15 @@
           :else :doorman/not-found)))
 
 (defn- explain-record [transaction {:keys [tables scope-kinds]} conditions asker action [table-key id-key] params actions-by-scope]
-  (let [place      {:tables-by-key (into {} (map (juxt :table identity)) tables) :scope-kinds scope-kinds}
+  (let [place      {:tables-by-key (into {} (map (juxt :table identity)) tables) :scope-kinds scope-kinds
+                    :transaction transaction :person-id (:person-id asker)}
         table      (get-in place [:tables-by-key table-key])
         id         (get params id-key)
         row        (when id (find-row transaction table id))
         row-scopes (when row (find-row-scopes table row place))]
     {:record            {:table table-key :id id :exists? (some? row) :scopes (or row-scopes [])}
      :answer            (if row (find-answer transaction table id action conditions scope-kinds) :doorman/not-found)
-     :memberships       (explain-memberships transaction (:person-id asker) row-scopes)
+     :memberships       (explain-memberships transaction scope-kinds (:person-id asker) row-scopes)
      :actions-in-scopes (vec (for [{:keys [scope-kind scope-id]} row-scopes :when scope-id]
                                {:scope-kind scope-kind :scope-id scope-id
                                 :actions (vec (sort-by str (get actions-by-scope [scope-kind scope-id])))}))
@@ -134,12 +157,15 @@
 
 (defn- explain-named-scope
   "For a :scope [kind param] handler: the scope the param names, whether
-   the action is held there, and the check's answer."
+   the action is held there, the roles that give it (or what one of its
+   [:member …] sentences needs held there), and the check's answer."
   [transaction scope-kinds needs asker action [kind param] params actions-by-scope]
   (let [scope-id (get params param)
         held?    (and (uuid? scope-id) (acting/is-held-there? needs action [kind scope-id] actions-by-scope))
-        state    (when held? (check/find-state-deny transaction scope-kinds action [kind scope-id]))]
-    {:scope  {:says [kind param] :scope-kind kind :scope-id scope-id :held-there? held?}
+        state    (when held? (check/find-state-deny transaction scope-kinds action [kind scope-id]))
+        giving   (into #{action} (for [{need-kind :kind :keys [held]} (get needs action) :when (= kind need-kind)] held))]
+    {:scope  {:says [kind param] :scope-kind kind :scope-id scope-id :held-there? held?
+              :given-by (if (uuid? scope-id) (find-roles-giving transaction scope-kinds (:person-id asker) [kind scope-id] giving) [])}
      :answer (cond (not held?)                                                 :doorman/not-found
                    (check/find-flag-deny scope-kinds action (:session-flags asker)) :doorman/not-allowed
                    state                                                       :doorman/not-allowed
@@ -165,7 +191,9 @@
                               (not-any? :holds? explained) :doorman/not-found
                               flag-deny                   :doorman/not-allowed
                               :else                       :allowed)
-     :memberships       nil
+     :memberships       (when (and named (uuid? (:scope-id (:scope named))))
+                          (explain-memberships transaction scope-kinds (:person-id asker)
+                                               [{:scope-kind (first scope) :scope-id (:scope-id (:scope named))}]))
      :actions-in-scopes (vec (for [[[kind id] actions] (sort-by (comp str key) actions-by-scope)]
                                {:scope-kind kind :scope-id id :actions (vec (sort-by str actions))}))
      :sentences         explained

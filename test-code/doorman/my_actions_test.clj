@@ -8,6 +8,7 @@
    [doorman.test-answers :refer [refusal refusal-json read-without-request-ids without-request-id]]
    [cellar.api :as cellar]
    [doorman.api :as doorman]
+   [doorman.test-roles :refer [add-member!]]
    [doorman.shapes]
    [doorman.test-log :refer [log]]
    [doorman.test-settings :as test-settings]
@@ -123,7 +124,7 @@
           (fn [transaction]
             (doorman/add-scope! transaction scope-kinds :shop shop-9 paul nil)
             (doorman/add-scope! transaction scope-kinds :shop shop-7 paul nil)
-            (doorman/add-membership! transaction [:shop shop-7] anna "Staff")))
+            (add-member! transaction scope-kinds [:shop shop-7] anna #{"Staff"})))
         (testing "Anna, Staff in shop 7: what is open to someone signed in, everywhere; her role's in shop 7"
           (is (= [{:scope-kind nil :scope-id nil :actions [:comments/write :posts/read :profile/edit]}
                   {:scope-kind :shop :scope-id shop-7 :actions [:orders/edit :orders/see]}]

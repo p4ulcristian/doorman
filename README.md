@@ -49,10 +49,12 @@ step's lines say who asked
 | who | `make-find-session-step` | the step first in a handler: who asks, by a bearer token (no Origin check; no session flags) or the session cookie (the Origin checked), both refused; `:doorman/person-id`, `:doorman/visitor-id` and `:doorman/session-flags` in the context, the person (and token) or visitor in `:bridge/log` |
 | who | `run-as-asker-of-request!` | `(f transaction)` as the asker doorman finds in a request, by the step's rules, outside a message (the app's own route, a page): held by the gates as a message's steps are |
 | who | `find-session-key-of-request` | a hash of the request's token, else its session cookie, for rate limits |
-| what | `access-tables` | its tables, `doorman.scopes` `doorman.roles` `doorman.role_actions` `doorman.memberships` |
+| what | `access-tables` | its tables, `doorman.scopes` `doorman.roles` `doorman.role_actions` `doorman.memberships` `doorman.membership_roles` |
+| what | `access-move-from-v0-7` | a database of v0.7 (a role was its name, a member held one) brought to `access-tables` with its rows, by two `cellar/migrate!` runs: `:old-tables` and `:renames`, then `:copy-and-drops` ([why](decisions/2026-10-23-roles-have-ids-and-a-member-holds-a-set-of-roles.md)) |
 | what | `check-scope-kinds` | the app's kinds of scope, checked, every key written out |
 | what | `does-action-only-read?` | whether an action only reads (its handlers run read-only); every other one's may write |
-| what | `add-scope!` `add-role!` `add-membership!` `remove-membership!` `list-actions-of-person` | who belongs where; a scope under its parent scope; a scope's founder is its Owner, holding every action of its kind and below; a membership counts in the scopes below |
+| what | `add-scope!` `add-membership!` `set-membership-roles!` `remove-membership!` `list-actions-of-person` | who belongs where; a scope under its parent scope (its roles' ids back, by name); a scope's founder is its Owner, holding every action of its kind and below; a member holds a set of the scope's roles by id (`#{}` for none yet), their actions there the union of their roles'; a membership counts in the scopes below |
+| what | `add-role!` `rename-role!` `set-role-actions!` `remove-role!` `list-roles` | a scope's roles: an id, a name unique in the scope, actions; renamed in one row; a role nobody holds removed (`:doorman/role-held` while held); Owner never changed |
 | what | `make-my-actions-handler` `my-actions-answer-shape` (the shape on both sides: `doorman.api`'s `.cljs` half has it too) | "what may I do?" for the browser: the asker's actions by scope, and the open ones under nil kind and id, every scope; the denies taken out; read-only, as the asker |
 | what | `make-sql-conditions` | the sentences, checked, as SQL: one condition per action and per operation, the denies in them |
 | what | `install-access-functions!` | the SQL functions the check and the gates call, and those the app's sentences and denies need (a `:via`'s, a scope state's, the guard's, `doorman."may <action> on <table>"()`), before migrate |
@@ -62,7 +64,7 @@ step's lines say who asked
 | what | `refusals` (both sides; the browser's half has `put-refusals-into-shapes` too) | doorman's reasons, `:doorman/signed-out` `:doorman/not-found` `:doorman/not-allowed`, added to every handler it wraps |
 | what | `run-as-system!` | `(f transaction)` as a named system actor (a webhook's function): the rows the sentences give it by `[:system name]`, the open ones and the ungated tables, nothing else; the app's own role, no role that passes the gates |
 | what | `find-system-leaks` | the leak test of a system actor: the rows it must not reach, read, changed and deleted as it, undone |
-| what | `explain-refusal` | why a message would be refused, as data: the check's answer, the record's scopes, the asker's roles and actions there, each sentence's parts and the denies; read-only, for a REPL |
+| what | `explain-refusal` | why a message would be refused, as data: the check's answer, the record's scopes, the asker's roles and actions there, each sentence's parts (a `[:member …]`'s roles that give what it needs, `:given-by`) and the denies; read-only, for a REPL |
 
 Nothing has a default: every setting and option is written out; a missing
 one refuses, named, with every other problem at once. A handler writes out
@@ -146,6 +148,14 @@ app's shapes by name. Each needs its text in the app's catalogs.
   (cellar/grant-tables-to-role! owner-pool tables "app"))   ; the folder doorman too
 
 ;; the app, as its own role, which owns nothing
+;; who belongs where: a member holds a set of the scope's roles, by id
+(cellar/run-in-transaction! app-pool {:read-only? false}
+  (fn [transaction]
+    (let [roles (doorman/add-scope! transaction scope-kinds :shop shop-id paul-id company-id)   ;=> {"Owner" #uuid "…" "Staff" … "Bookkeeper" …}
+          qc    (doorman/add-role! transaction scope-kinds [:shop shop-id] "QC approver" #{:orders/edit})]
+      (doorman/add-membership! transaction [:shop shop-id] anna-id #{(get roles "Bookkeeper") qc})   ; :orders/see and :orders/edit
+      (doorman/add-membership! transaction [:shop shop-id] tom-id #{}))))                          ; no role yet
+
 (def ready
   (doorman/put-access-into-handlers
    {:orders/one   {:action       :orders/see
@@ -199,7 +209,8 @@ app's shapes by name. Each needs its text in the app's catalogs.
 (doorman/explain-refusal {:pool app-pool :handlers handlers :tables app-tables :scope-kinds scope-kinds}
                          {:person-id anna :visitor-id nil :session-flags #{}}
                          :orders/one {:order/id order-in-another-shop})
-;=> {:answer :doorman/not-found :record {…} :memberships […] :sentences [{… :to {:holds? false :needs :orders/see …}}] :denies […]}
+;=> {:answer :doorman/not-found :record {…} :memberships [{… :roles [{:role-id … :name "Staff" :actions […]}]}]
+;    :sentences [{… :to {:holds? false :needs :orders/see :given-by [] …}}] :denies […]}
 
 ;; in the app's tests, with the app's wire (wire.api's make-wire-from-settings) and log (logbook's)
 (is (= [] (doorman/find-leaks ready anna-request {:orders [order-in-another-shop] :shops [another-shop]}
