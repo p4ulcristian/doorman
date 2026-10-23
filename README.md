@@ -18,7 +18,7 @@ row rules) from the same conditions; the leak test; and why a message
 would be refused, as data.
 
 ```clojure
-io.github.p4ulcristian/doorman {:git/tag "v0.7.9" :git/sha "8afc3d7"}
+io.github.p4ulcristian/doorman {:git/tag "v0.7.10" :git/sha "8d59580"}
 ```
 
 Needs [cellar](https://github.com/p4ulcristian/cellar) (Postgres, tables as
