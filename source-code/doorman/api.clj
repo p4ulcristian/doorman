@@ -189,7 +189,7 @@
 (defn does-action-only-read?
   "Whether an action does nothing but :read (its kind says #{:read}): a
    handler of it runs in a read-only transaction, which Postgres keeps
-   from writing. Every other action's handlers may write; house keys their
+   from writing. Every other action's handlers may write; groundwork keys their
    messages to run once. An action no kind has: false.
 
      (doorman/does-action-only-read? scope-kinds :orders/see)   ;=> true
@@ -345,7 +345,7 @@
    transaction telling Postgres who is asking, in which its step reads
    doorman's tables (so doorbell's notes name them). It is
    ready as it is: not for put-access-into-handlers, which wants an
-   :action. The app names it; house: :doorman/my-actions.
+   :action. The app names it; groundwork: :doorman/my-actions.
 
      (assoc handlers :doorman/my-actions
             (doorman/make-my-actions-handler {:pool pool :tables tables :scope-kinds scope-kinds
