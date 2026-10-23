@@ -155,7 +155,7 @@ app's shapes by name. Each needs its text in the app's catalogs.
 
 ;; the app, as its own role, which owns nothing
 ;; who belongs where: a member holds a set of the scope's roles, by id
-(cellar/run-in-transaction! app-pool {:read-only? false}
+(cellar/run-in-transaction! app-pool {:read-only? false :log log}
   (fn [transaction]
     (let [roles (doorman/add-scope! transaction scope-kinds :shop shop-id paul-id company-id)   ;=> {"Owner" #uuid "…" "Staff" … "Bookkeeper" …}
           qc    (doorman/add-role! transaction scope-kinds [:shop shop-id] "QC approver" #{:orders/edit})]
