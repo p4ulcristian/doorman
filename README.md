@@ -213,7 +213,8 @@ the table's `:visitor` column), `[:system name]` (a named system actor,
 `run-as-system!`, never a person;
 [why](decisions/2026-10-23-a-named-system-actor-is-allowed-what-its-sentences-give-it.md)),
 or `:via {…}` instead of `:to`; `:when` is
-`[:= col v]`, `[:not= col v]`, `[:in col [vs]]`, `[:none col]`, `[:and …]`,
+`[:= col v]`, `[:not= col v]`, `[:in col [vs]]`, `[:none col]` (not set),
+`[:some col]` (set; [why](decisions/2026-10-23-a-when-may-say-a-column-is-set.md)), `[:and …]`,
 `[:or …]`; `:only`, on every sentence, is `:all-of-the-action` (every
 operation its kind declares) or the operations it allows on this table,
 `#{:read}`. A `[:member column]` names the column's scope, or, on a scope

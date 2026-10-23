@@ -106,3 +106,46 @@
                                                                                       :to [:member :order/status]}])]
                                                        kinds))
         "another column still names none")))
+
+(deftest a-when-may-say-a-column-is-set
+  (let [kinds      (assoc-in scope-kinds [:shop :actions :catalogue/see] #{:read})
+        categories {:table   :categories
+                    :columns [[:category/id :uuid {:primary-key? true}]
+                              [:category/shop-id :uuid {:optional? true :references :shop/id}]]
+                    :access  [{:allow :catalogue/see :only #{:read} :to :anyone :when [:some :category/shop-id]}]}
+        problems   #(try (doorman/make-sql-conditions [shops orders %] kinds) []
+                         (catch clojure.lang.ExceptionInfo e (:problems (ex-data e))))]
+    (testing "[:some col] is SQL's IS NOT NULL, the twin of [:none col]"
+      (is (= (acting "catalogue/see" "(true AND category__shop_id IS NOT NULL)")
+             (get-in (doorman/make-sql-conditions [shops orders categories] kinds) [:categories :actions :catalogue/see])))
+      (is (= (acting "orders/see" "(true AND (order__customer_id IS NOT NULL OR order__customer_id IS NULL))")
+             (get-in (doorman/make-sql-conditions [shops (assoc orders :access [{:allow :orders/see :only :all-of-the-action :to :anyone
+                                                                                 :when [:or [:some :order/customer-id] [:none :order/customer-id]]}])]
+                                                  kinds)
+                     [:orders :actions :orders/see]))
+          "inside :or, beside :none"))
+    (testing "its column is checked as every :when's"
+      (is (some #(re-find #":category/owner-id is no column of :categories" %)
+                (problems (assoc-in categories [:access 0 :when] [:some :category/owner-id])))))
+    (testing "an open write may be narrowed by it"
+      (is (= [] (problems (assoc categories :access [{:allow :orders/edit :only #{:update} :to :anyone :when [:some :category/shop-id]}])))))))
+
+(deftest a-vias-when-may-say-a-column-is-set
+  (let [kinds      {:shop    {:table :shops :actions {:orders/see #{:read}} :roles {}}
+                    :partner {:table :partners :actions {:agreements/see #{:read}} :roles {}}}
+        partners   {:table :partners :columns [[:partner/id :uuid {:primary-key? true}]]}
+        agreements {:table   :agreements
+                    :columns [[:agreement/id :uuid {:primary-key? true}]
+                              [:agreement/shop-id :uuid {:references :shop/id}]
+                              [:agreement/partner-id :uuid {:references :partner/id}]
+                              [:agreement/accepted-at :time/instant {:optional? true}]]
+                    :indexes [[:agreement/shop-id] [:agreement/partner-id]]
+                    :access  :public}
+        orders     (assoc orders :indexes [[:order/shop-id]])
+        via        #(assoc orders :access [{:allow :orders/see :only #{:read}
+                                            :via {:table :agreements :match {:order/shop-id :agreement/shop-id}
+                                                  :to [:member :agreement/partner-id :agreements/see] :when %}}])
+        problems   #(try (doorman/make-sql-conditions [shops partners agreements %] kinds) []
+                         (catch clojure.lang.ExceptionInfo e (:problems (ex-data e))))]
+    (is (= [] (problems (via [:some :agreement/accepted-at]))) "a related row that is accepted: allowed")
+    (is (some #(re-find #"can't say \[:none" %) (problems (via [:none :agreement/accepted-at]))) "[:none …] there stays refused")))

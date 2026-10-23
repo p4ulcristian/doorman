@@ -26,7 +26,7 @@
           set of them, #{:read} (written out on every sentence)
    :when  a condition on the row's own columns: [:= col value],
           [:not= col value], [:in col [values]], [:none col] (col is null),
-          [:and …], [:or …]
+          [:some col] (col is set, not null), [:and …], [:or …]
    :via   instead of :to: the row is allowed while a related row exists
           for which a who (:to) and a :when hold, its :match columns equal
           the row's: SQL's EXISTS, read by a function doorman installs
@@ -159,6 +159,7 @@
             (str (column-name (first more)) " IN (" (str/join ", " (map turn-value-into-sql (second more))) ")")
             "false")
     :none (str (column-name (first more)) " IS NULL")
+    :some (str (column-name (first more)) " IS NOT NULL")
     :and  (str "(" (str/join " AND " (map turn-when-into-sql more)) ")")
     :or   (str "(" (str/join " OR " (map turn-when-into-sql more)) ")")
     (throw (ex-info (str "Not a :when doorman knows: " (pr-str condition)) {:type :doorman/bad-when :when condition}))))
@@ -168,7 +169,7 @@
   [[word & more :as condition]]
   (case word
     (:and :or)            (mapcat find-condition-words more)
-    (:= :not= :in :none)  [[word (first more)]]
+    (:= :not= :in :none :some) [[word (first more)]]
     [[word nil condition]]))
 
 (def ^:private postgres-types
