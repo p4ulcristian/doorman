@@ -245,7 +245,7 @@
                 request {:request-method :post
                          :headers {"origin" "http://app.test" "cookie" (first (str/split set-cookie #";"))}}]
             (is (= (refusal :doorman/not-found)
-                   (without-request-id (:emails/mark (bridge/answer-message ready :no-rate-limits request {:emails/mark {}} {:wire wire :log log})))))))))))
+                   (without-request-id (:emails/mark (bridge/answer-message ready :no-rate-limits request {:emails/mark {}} {:wire wire :log log :meter (test-settings/make-meter) :metric-buckets test-settings/metric-buckets})))))))))))
 
 (deftest a-record-under-a-record-carries-its-parents-columns
   (if-not port
@@ -290,8 +290,8 @@
                                                                    #";"))}})
                   job-id   (:job/id (job))]
               (is (= (refusal :doorman/not-found) (without-request-id (:jobs/one (bridge/answer-message ready :no-rate-limits (request anna) {:jobs/one {:job/id job-id}}
-                                                                                                           {:wire wire :log log})))))
+                                                                                                           {:wire wire :log log :meter (test-settings/make-meter) :metric-buckets test-settings/metric-buckets})))))
               (is (= {:job/id (str job-id)} (:jobs/one (bridge/answer-message ready :no-rate-limits (request mia) {:jobs/one {:job/id job-id}}
-                                                                          {:wire wire :log log})))
+                                                                          {:wire wire :log log :meter (test-settings/make-meter) :metric-buckets test-settings/metric-buckets})))
                   "Mia, in shop 9 too, still does")
-              (is (= [] (doorman/find-leaks ready (request anna) {:jobs [job-id]} {:wire wire :log log :scope-kinds scope-kinds :seed 7 :size 10}))))))))))
+              (is (= [] (doorman/find-leaks ready (request anna) {:jobs [job-id]} {:wire wire :log log :meter (test-settings/make-meter) :metric-buckets test-settings/metric-buckets :scope-kinds scope-kinds :seed 7 :size 10}))))))))))

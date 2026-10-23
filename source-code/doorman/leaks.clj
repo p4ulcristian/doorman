@@ -14,7 +14,8 @@
    handler's :params-shape, by malli's generator, with the options' :seed
    (the same params every run) and :size (how big the made-up values get).
    Each message is answered by bridge's answer-message, by the options'
-   :wire and :log."
+   :wire, :log, :meter and :metric-buckets: counted on the meter as over
+   http."
   (:require
    [bridge.api :as bridge]
    [malli.generator :as generator]))
@@ -28,8 +29,10 @@
   [data]
   (set (map str (filter #(or (uuid? %) (string? %)) (tree-seq coll? seq data)))))
 
-(defn- ask [handlers request handler-name params {:keys [wire log]}]
-  (get (bridge/answer-message handlers :no-rate-limits request {handler-name params} {:wire wire :log log}) handler-name))
+(defn- ask [handlers request handler-name params options]
+  (get (bridge/answer-message handlers :no-rate-limits request {handler-name params}
+                              (select-keys options [:wire :log :meter :metric-buckets]))
+       handler-name))
 
 (defn- is-not-found?
   "Refused with a reason that tells nothing of the record: :doorman/not-found,

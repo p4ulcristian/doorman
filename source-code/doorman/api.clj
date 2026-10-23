@@ -735,11 +735,14 @@
    :table (the options' :scope-kinds) in its param; any other must give
    none of them back. Its other params come from its :params-shape, by
    malli's generator, with the options' :seed and :size. Each message is
-   answered as over http, by the options' :wire, the app's wire, and
-   :log, the app's log (doorman makes neither). Every option is required.
+   answered as over http, by the options' :wire, the app's wire, :log,
+   the app's log, and :meter, the app's meter, with :metric-buckets,
+   bridge's histogram bounds (the settings' own): doorman makes none of
+   them. Every option is required.
    Returns every leak; empty means none.
 
      (is (= [] (doorman/find-leaks ready-handlers anna-request {:orders [order-in-shop-9] :shops [shop-9]}
-                                   {:wire wire :log log :scope-kinds scope-kinds :seed 7 :size 30})))"
+                                   {:wire wire :log log :meter meter :metric-buckets metric-buckets
+                                    :scope-kinds scope-kinds :seed 7 :size 30})))"
   [handlers request foreign-ids options]
   (leaks/find-leaks handlers request foreign-ids (settings/check-leak-options options)))

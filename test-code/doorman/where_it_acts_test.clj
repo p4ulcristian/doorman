@@ -234,7 +234,7 @@
                                                                                             {:settings settings :tables [] :session-flags #{}}))
                                                              #";"))}})
             ask      (fn [person handler-name params]
-                       (without-request-id (get (bridge/answer-message ready :no-rate-limits (request person) {handler-name params} {:wire wire :log log})
+                       (without-request-id (get (bridge/answer-message ready :no-rate-limits (request person) {handler-name params} {:wire wire :log log :meter (test-settings/make-meter) :metric-buckets test-settings/metric-buckets})
                                                 handler-name)))
             machines-in #(count-rows owner-pool (str "SELECT 1 AS row__found FROM machines WHERE machine__shop_id = '" % "'"))]
         (try
@@ -307,7 +307,7 @@
                   "her Employee role in B gives another action")))
 
           (testing "the leak test asks a :scope handler in each foreign scope"
-            (let [options {:wire wire :log log :scope-kinds scope-kinds :seed 7 :size 10}]
+            (let [options {:wire wire :log log :meter (test-settings/make-meter) :metric-buckets test-settings/metric-buckets :scope-kinds scope-kinds :seed 7 :size 10}]
               (is (= [] (doorman/find-leaks (select-keys ready [:machines/create]) (request anna) {:shops [shop-b]} options)))
               (let [unchecked (update-in ready [:machines/create :steps] #(vec (remove (comp #{:doorman/check} :name) %)))]
                 (is (= [{:handler :machines/create :asked-in [:shop shop-b] :answer {}}]

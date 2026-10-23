@@ -51,6 +51,11 @@
   []
   (meter/make-meter {:jvm-metrics false :most-series-per-metric 10000} {:log log}))
 
+(def metric-buckets
+  "bridge's histogram bounds, as answer-message and the leak test take
+   them: the settings' :metric-buckets."
+  {:answer-seconds [0.01 0.1 1]})
+
 (defn start-pool!
   "A pool on the test Postgres, as user, with the tests' log and a meter of
    its own (cellar takes one meter per pool)."

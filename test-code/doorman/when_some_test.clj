@@ -125,7 +125,7 @@
                                                                                                            {:settings settings :tables [] :session-flags #{}}))
                                                                             #";"))))})
             ask      (fn [person handler-name params]
-                       (without-request-id (get (bridge/answer-message ready :no-rate-limits (request person) {handler-name params} {:wire wire :log log})
+                       (without-request-id (get (bridge/answer-message ready :no-rate-limits (request person) {handler-name params} {:wire wire :log log :meter (test-settings/make-meter) :metric-buckets test-settings/metric-buckets})
                                                 handler-name)))]
         (try
           (testing "the gate: a shop's own categories are read by anyone, the universal ones are not"

@@ -192,7 +192,7 @@
                                                                                                            {:settings settings :tables [] :session-flags #{}}))
                                                                             #";"))))})
             ask      (fn [person handler-name params]
-                       (without-request-id (get (bridge/answer-message ready :no-rate-limits (request person) {handler-name params} {:wire wire :log log})
+                       (without-request-id (get (bridge/answer-message ready :no-rate-limits (request person) {handler-name params} {:wire wire :log log :meter (test-settings/make-meter) :metric-buckets test-settings/metric-buckets})
                                                 handler-name)))
             moves-made #(count-rows owner-pool "SELECT move__id FROM moves")]
         (try
@@ -249,7 +249,7 @@
 
           (testing "the leak test still passes"
             (is (= [] (doorman/find-leaks ready (request anna) {:batches [batch-99] :shops [shop-c]}
-                                          {:wire wire :log log :scope-kinds scope-kinds :seed 7 :size 10}))))
+                                          {:wire wire :log log :meter (test-settings/make-meter) :metric-buckets test-settings/metric-buckets :scope-kinds scope-kinds :seed 7 :size 10}))))
           (finally
             (cellar/stop-pool! app-pool)
             (cellar/stop-pool! owner-pool)))))))

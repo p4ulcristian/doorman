@@ -184,7 +184,8 @@
   (let [errors (try (doorman/find-leaks {} {} {} {:seed 7 :size 30})
                     (catch clojure.lang.ExceptionInfo e (ex-data e)))]
     (is (= :doorman/bad-options (:type errors)))
-    (is (= #{:wire :log :scope-kinds} (set (keys (:errors errors)))) "doorman makes no wire and no log: the app hands its own in")))
+    (is (= #{:wire :log :meter :metric-buckets :scope-kinds} (set (keys (:errors errors))))
+        "doorman makes no wire, log or meter: the app hands its own in")))
 
 (deftest the-check-end-to-end
   (if-not port

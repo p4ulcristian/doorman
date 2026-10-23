@@ -60,7 +60,7 @@ step's lines say who asked
 | what | `install-access-functions!` | the SQL functions the check and the gates call, and those the app's sentences and denies need (a `:via`'s, a scope state's, the guard's, `doorman."may <action> on <table>"()`), before migrate |
 | what | `put-access-into-handlers` | every handler says where it acts (`:record`, or `:scope` `[kind param]`, `:every-scope-holding-the-action`, `:no-scope`); the check in front of its steps, which run in a transaction where Postgres hears only the handler's action, in those scopes ([why](decisions/2026-10-23-a-handler-says-where-it-acts-and-postgres-hears-only-that.md)); a param marked `[:uuid {:doorman/row-of :workstations}]` must be a row the action reads there, else `:doorman/not-found`, before any step ([why](decisions/2026-10-23-a-param-may-say-it-is-a-row-of-a-table.md)) |
 | what | `put-gates-on-tables` | the table maps with their gates, `:gates nil` on the ungated ones, and a record under a record (`:parent`) given its link to the parent and the fill of its carried columns, for cellar |
-| what | `find-leaks` | the leak test, for the app's own tests, by the app's wire and log (`:wire`, `:log`); a record or scope it must not reach must be refused `:doorman/not-found` (`:doorman/signed-out` for an asker nobody signed in); a `:scope [kind param]` handler asked in each foreign scope (`:scope-kinds`) |
+| what | `find-leaks` | the leak test, for the app's own tests, by the app's wire, log and meter (`:wire`, `:log`, `:meter`, with bridge's `:metric-buckets`); a record or scope it must not reach must be refused `:doorman/not-found` (`:doorman/signed-out` for an asker nobody signed in); a `:scope [kind param]` handler asked in each foreign scope (`:scope-kinds`) |
 | what | `refusals` (both sides; the browser's half has `put-refusals-into-shapes` too) | doorman's reasons, `:doorman/signed-out` `:doorman/not-found` `:doorman/not-allowed`, added to every handler it wraps |
 | what | `run-as-system!` | `(f transaction)` as a named system actor (a webhook's function): the rows the sentences give it by `[:system name]`, the open ones and the ungated tables, nothing else; the app's own role, no role that passes the gates |
 | what | `find-system-leaks` | the leak test of a system actor: the rows it must not reach, read, changed and deleted as it, undone |
@@ -214,9 +214,11 @@ app's shapes by name. Each needs its text in the app's catalogs.
 ;=> {:answer :doorman/not-found :record {…} :memberships [{… :roles [{:role-id … :name "Staff" :actions […]}]}]
 ;    :sentences [{… :to {:holds? false :needs :orders/see :given-by [] …}}] :denies […]}
 
-;; in the app's tests, with the app's wire (wire.api's make-wire-from-settings) and log (logbook's)
+;; in the app's tests, with the app's wire (wire.api's make-wire-from-settings), log (logbook's),
+;; meter (meter's) and bridge's :metric-buckets (the settings')
 (is (= [] (doorman/find-leaks ready anna-request {:orders [order-in-another-shop] :shops [another-shop]}
-                              {:wire wire :log log :scope-kinds scope-kinds :seed 7 :size 30})))
+                              {:wire wire :log log :meter meter :metric-buckets metric-buckets
+                               :scope-kinds scope-kinds :seed 7 :size 30})))
 ```
 
 The words of a sentence: `:to` is `:anyone`, `:signed-in`, `[:member

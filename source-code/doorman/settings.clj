@@ -149,6 +149,12 @@
    doorman never makes one.
    :log: the app's log (logbook's log-function), which each message's log
    is made from, as over http; doorman never makes one.
+   :meter: the app's meter (a test's own in a test), which bridge's
+   answer-message counts each message into, as over http; doorman never
+   makes one.
+   :metric-buckets: bridge's histogram bounds, the settings' own
+   ({:answer-seconds [...]}), which answer-message declares its metrics
+   with.
    :scope-kinds: the app's (check-scope-kinds): a :scope [kind param]
    handler is asked in the foreign ids of its kind's :table.
    :seed: the same seed makes the same params every run.
@@ -156,6 +162,8 @@
   [:map {:closed true}
    [:wire [some? {:error/message "should be the app's wire, made by wire.api/make-wire-from-settings"}]]
    [:log [fn? {:error/message "should be the app's log function, made by logbook"}]]
+   [:meter [some? {:error/message "should be the app's meter, made by meter.api/make-meter"}]]
+   [:metric-buckets map?]
    [:scope-kinds [:map-of :keyword map?]]
    [:seed :int]
    [:size [:int {:min 0}]]])

@@ -212,7 +212,7 @@
 (defn- ask
   "A message's answer as over http (JSON data), by the app's wire."
   [ready cookie handler-name params]
-  (without-request-id (get (bridge/answer-message ready :no-rate-limits (request-of cookie) {handler-name params} {:wire wire :log log})
+  (without-request-id (get (bridge/answer-message ready :no-rate-limits (request-of cookie) {handler-name params} {:wire wire :log log :meter (test-settings/make-meter) :metric-buckets test-settings/metric-buckets})
                            handler-name)))
 
 (defn- texts [answer] (set (map str (filter #(or (uuid? %) (string? %)) (tree-seq coll? seq answer)))))
@@ -454,7 +454,7 @@
                      (set (map :way (:sentences answer)))))))
 
           (testing "the leak test, for each asker, with the rows they must not reach"
-            (let [leaks #(doorman/find-leaks ready (request-of %1) {:orders %2} {:wire wire :log log :scope-kinds scope-kinds :seed 7 :size 30})]
+            (let [leaks #(doorman/find-leaks ready (request-of %1) {:orders %2} {:wire wire :log log :meter (test-settings/make-meter) :metric-buckets test-settings/metric-buckets :scope-kinds scope-kinds :seed 7 :size 30})]
               (is (= [] (leaks (sign-in anna #{}) [order-80 order-99 order-c order-v])) "Staff of shop 7")
               (is (= [] (leaks (sign-in dora #{}) [order-80 order-99 order-v])) "the Director")
               (is (= [] (leaks (sign-in pia #{}) [order-80 order-99 order-c])) "the partner, through the via")

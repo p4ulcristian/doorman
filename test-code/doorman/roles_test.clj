@@ -104,7 +104,7 @@
                                                                                             {:settings settings :tables [] :session-flags #{}}))
                                                              #";"))}})
             ask      (fn [person handler-name params]
-                       (without-request-id (get (bridge/answer-message ready :no-rate-limits (request person) {handler-name params} {:wire wire :log log})
+                       (without-request-id (get (bridge/answer-message ready :no-rate-limits (request person) {handler-name params} {:wire wire :log log :meter (test-settings/make-meter) :metric-buckets test-settings/metric-buckets})
                                                 handler-name)))
             my-actions (let [handlers {:doorman/my-actions (doorman/make-my-actions-handler {:pool app-pool :tables tables :scope-kinds scope-kinds
                                                                                              :find-session-step (doorman/make-find-session-step app-pool settings)
@@ -112,7 +112,7 @@
                          (fn [person]
                            (:shaped-data (wire-api/turn-json-data-into-shaped-data-or-errors
                                           wire doorman/my-actions-answer-shape
-                                          (get (bridge/answer-message handlers :no-rate-limits (request person) {:doorman/my-actions {}} {:wire wire :log log})
+                                          (get (bridge/answer-message handlers :no-rate-limits (request person) {:doorman/my-actions {}} {:wire wire :log log :meter (test-settings/make-meter) :metric-buckets test-settings/metric-buckets})
                                                :doorman/my-actions)))))
             explain  (fn [person handler-name params]
                        (doorman/explain-refusal {:pool app-pool :handlers handlers :tables tables :scope-kinds scope-kinds}
@@ -167,7 +167,7 @@
                 (is (= [{:scope-kind :shop :scope-id hotcoats :roles []}] (:memberships answer)) "a member, holding no role")))
 
             (testing "the leak test: Anna's roles and Tom's none reach nothing of the other shop"
-              (let [options {:wire wire :log log :scope-kinds scope-kinds :seed 7 :size 10}]
+              (let [options {:wire wire :log log :meter (test-settings/make-meter) :metric-buckets test-settings/metric-buckets :scope-kinds scope-kinds :seed 7 :size 10}]
                 (is (= [] (doorman/find-leaks ready (request anna) {:orders [order-2] :shops [other-shop]} options)))
                 (is (= [] (doorman/find-leaks ready (request tom) {:orders [order-1 order-2] :shops [hotcoats other-shop]} options)))))
 

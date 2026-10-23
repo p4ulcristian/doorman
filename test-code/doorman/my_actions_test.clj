@@ -102,7 +102,7 @@
                                                             origin (assoc "origin" origin)
                                                             cookie (assoc "cookie" cookie))}
                                          {:doorman/my-actions {}}
-                                         {:wire wire :log log}))]
+                                         {:wire wire :log log :meter (test-settings/make-meter) :metric-buckets test-settings/metric-buckets}))]
     (if (bridge/is-error-answer? answer)
       (without-request-id answer)
       (:shaped-data (wire-api/turn-json-data-into-shaped-data-or-errors wire doorman/my-actions-answer-shape answer)))))

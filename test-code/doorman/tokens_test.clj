@@ -138,7 +138,7 @@
             bearer     (fn [text] {:request-method :post :headers {"authorization" (str "Bearer " text)}})
             make!      (fn [request name days] (doorman/make-token! app-pool request {:settings settings :name name :ends-at (in-days days)}))
             ask        (fn [request handler-name params]
-                         (without-request-id (get (bridge/answer-message ready :no-rate-limits request {handler-name params} {:wire wire :log log})
+                         (without-request-id (get (bridge/answer-message ready :no-rate-limits request {handler-name params} {:wire wire :log log :meter (test-settings/make-meter) :metric-buckets test-settings/metric-buckets})
                                                   handler-name)))
             asker-of   (fn [request]
                          (let [context (bridge/run-steps-until-answered [step] {:bridge/request request :bridge/log log})]
