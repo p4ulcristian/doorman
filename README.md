@@ -18,7 +18,7 @@ row rules) from the same conditions; the leak test; and why a message
 would be refused, as data.
 
 ```clojure
-io.github.p4ulcristian/groundwork-access {:git/tag "v0.7.10" :git/sha "8d59580"}
+io.github.p4ulcristian/groundwork-access {:git/tag "v0.7.11" :git/sha "fa22575"}
 ```
 
 Needs [groundwork-postgres](https://github.com/p4ulcristian/groundwork-postgres) (Postgres, tables as
