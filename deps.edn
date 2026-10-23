@@ -11,7 +11,7 @@
   ;; a reference what it does on delete, update and when checked, an index as a map;
   ;; migrate! takes {:tables :extensions :functions :views}, a function a file or a made {:name :sql};
   ;; run-in-transaction! takes the caller's :log, where after-commit failures go
-  io.github.p4ulcristian/cellar   {:git/sha "4396e6bc9353b8eb614c0db7b839da537d11863e"}
+  io.github.p4ulcristian/cellar   {:git/sha "7e239c732113d162f2462bc217b3abb88a8bd208"}
   ;; a handler's steps: the session step and the check are steps; answer-message for the leak test;
   ;; refuse, and a handler's :refusals
   ;; on its tidy-up branch, not released: a refusal is a named reason, declared on its handler;
