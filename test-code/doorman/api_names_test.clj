@@ -15,5 +15,5 @@
            put-access-into-handlers put-gates-on-tables find-leaks explain-refusal
            my-actions-answer-shape make-my-actions-handler
            ;; a named system actor
-           run-as-system! find-system-leaks}
+           run-as-system! run-as-asker! find-system-leaks}
          (set (keys (ns-publics 'doorman.api))))))

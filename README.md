@@ -51,6 +51,7 @@ step's lines say who asked
 | what | `put-access-into-handlers` | the check in front of every handler's steps, which run in a transaction that knows who is asking |
 | what | `put-gates-on-tables` | the table maps with their gates, `:gates nil` on the ungated ones, and a record under a record (`:parent`) given its link to the parent and the fill of its carried columns, for cellar |
 | what | `find-leaks` | the leak test, for the app's own tests, by the app's wire and log (`:wire`, `:log`) |
+| what | `run-as-asker!` | `(f transaction)` as an asker `{:person-id :visitor-id :session-flags}`, off a message (the app's own route): held by the gates as a message's steps are |
 | what | `run-as-system!` | `(f transaction)` as a named system actor (a webhook's function): the rows the sentences give it by `[:system name]`, the open ones and the ungated tables, nothing else; the app's own role, no role that passes the gates |
 | what | `find-system-leaks` | the leak test of a system actor: the rows it must not reach, read, changed and deleted as it, undone |
 | what | `explain-refusal` | why a message would be refused, as data: the check's answer, the record's scopes, the asker's roles and actions there, each sentence's parts and the denies; read-only, for a REPL |

@@ -170,6 +170,20 @@
             (is (= "{\"orders/sneak\":{\"error\":\"Something went wrong.\"}}"
                    (ask (:port server) (cookie anna) (str "{\"orders/sneak\":{\"order/shop-id\":\"" shop-7 "\"}}")))
                 "Anna may edit shop 7's orders, but orders/see only reads"))
+          (testing "run-as-asker!: a transaction as an asker, off a message, held by the same gates"
+            (let [as (fn [asker read-only? f] (doorman/run-as-asker! app-pool asker {:read-only? read-only? :scope-kinds scope-kinds} f))
+                  anna-asker {:person-id anna :visitor-id nil :session-flags #{}}]
+              (let [seen (set (as anna-asker true #(mapv :order/id (cellar/find-rows % find-all-orders {}))))]
+                (is (contains? seen order-42) "her shop's order")
+                (is (not (contains? seen order-99)) "not shop 9's"))
+              (is (= [] (as {:person-id nil :visitor-id nil :session-flags #{}} true #(mapv :order/id (cellar/find-rows % find-all-orders {}))))
+                  "nobody: no rows")
+              (is (thrown? Exception (as anna-asker false #(cellar/run-statement! % insert-order {:order/shop-id shop-9})))
+                  "a row in another shop is refused")
+              (is (thrown? Exception (as anna-asker true #(cellar/run-statement! % insert-order {:order/shop-id shop-7})))
+                  "read-only: no write at all")
+              (is (= :doorman/bad-options
+                     (:type (ex-data (try (as anna-asker nil identity) (catch clojure.lang.ExceptionInfo e e))))))))
           (testing "the leak test: Anna, asked for shop 9's order, gets nothing of it"
             (let [anna-request {:request-method :post
                                 :headers {"origin" "http://app.test" "cookie" (cookie anna)}}]

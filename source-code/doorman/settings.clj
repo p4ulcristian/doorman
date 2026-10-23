@@ -100,6 +100,15 @@
   [:map {:closed true}
    [:read-only? :boolean]])
 
+(def asker-run-options-shape
+  "run-as-asker!'s options, every key required.
+   :read-only?: true, Postgres refuses every write in its transaction.
+   :scope-kinds: the app's, checked (check-scope-kinds): which actions the
+   person's memberships hold."
+  [:map {:closed true}
+   [:read-only? :boolean]
+   [:scope-kinds map?]])
+
 (def leak-options-shape
   "find-leaks's options, every key required: malli's generator makes each
    handler's other params from its :params-shape.
@@ -160,6 +169,11 @@
   "Returns the options; throws with every problem at once."
   [options]
   (check-data-for-shape "The options" :doorman/bad-options system-options-shape options))
+
+(defn check-asker-run-options
+  "Returns the options; throws with every problem at once."
+  [options]
+  (check-data-for-shape "The options" :doorman/bad-options asker-run-options-shape options))
 
 (defn check-leak-options
   "Returns the options; throws with every problem at once."

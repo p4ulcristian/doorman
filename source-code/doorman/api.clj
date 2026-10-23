@@ -36,6 +36,7 @@
    Its tables are maps (sessions-table, access-tables) the app passes to
    cellar, in their own folder, doorman."
   (:require
+   [doorman.askers :as askers]
    [doorman.check :as check]
    [doorman.conditions :as conditions]
    [doorman.explain :as explain]
@@ -420,6 +421,20 @@
                              (fn [transaction] (mark-bounced! transaction event)))"
   [pool system-name options f]
   (system/run-as-system! pool system-name (settings/check-system-options options) f))
+
+(defn run-as-asker!
+  "Runs (f transaction) in one transaction of its own, as an asker
+   {:person-id :visitor-id :session-flags}: code on the app's own route
+   (a sign-in callback, a page that reads rows) held by the gates exactly
+   as a message's steps are, the person's scopes and actions, the
+   visitor, the session's flags. options, every key required:
+   {:read-only? false :scope-kinds scope-kinds} (the checked scope kinds).
+   A transaction handed in is refused.
+
+     (doorman/run-as-asker! pool asker {:read-only? true :scope-kinds scope-kinds}
+                            (fn [transaction] (cellar/find-rows transaction list-orders {})))"
+  [pool asker options f]
+  (askers/run-as-asker! pool (settings/check-asker asker) (settings/check-asker-run-options options) f))
 
 (defn find-system-leaks
   "The leak test of a named system actor, for an app's own test suite:
