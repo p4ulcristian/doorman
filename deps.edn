@@ -16,7 +16,7 @@
   ;; refuse, and a handler's :refusals
   ;; on its tidy-up branch, not released: a refusal is a named reason, declared on its handler;
   ;; answer-message counts every message on the app's meter
-  io.github.p4ulcristian/bridge {:git/sha "63451adbe42a6176074e1208ad4148e0eda19eab"}
+  io.github.p4ulcristian/bridge {:git/sha "8bdb927d950be3780088f2034fbc678597fcb49f"}
   ;; the step that finds the session adds the person to the message's log
   io.github.p4ulcristian/logbook  {:git/tag "v0.1.2" :git/sha "823f8fc"}
   ;; the settings and options checked by their shapes; the leak test: params
