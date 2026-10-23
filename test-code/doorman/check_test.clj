@@ -39,7 +39,7 @@
    :triggers   []
    :gates     nil
    :on-change nil
-   :access    [{:allow :orders/see :to [:member :order/shop-id]}]})
+   :access    [{:allow :orders/see :only :all-of-the-action :to [:member :order/shop-id]}]})
 
 (def ^:private paul #uuid "00000000-0000-4000-8000-00000000000a")
 (def ^:private anna #uuid "00000000-0000-4000-8000-00000000000b")
@@ -61,6 +61,7 @@
 
 (def ^:private handlers
   {:orders/remind {:action       :orders/see                ; no :record: an email, say
+                   :scope        :every-scope-holding-the-action
                    :params-shape [:map]
                    :answer-shape [:map]
                    :rate-limit   nil
@@ -145,7 +146,7 @@
   (let [errors (try (doorman/find-leaks {} {} {} {:seed 7 :size 30})
                     (catch clojure.lang.ExceptionInfo e (ex-data e)))]
     (is (= :doorman/bad-options (:type errors)))
-    (is (= #{:wire :log} (set (keys (:errors errors)))) "doorman makes no wire and no log: the app hands its own in")))
+    (is (= #{:wire :log :scope-kinds} (set (keys (:errors errors)))) "doorman makes no wire and no log: the app hands its own in")))
 
 (deftest the-check-end-to-end
   (if-not port

@@ -35,7 +35,7 @@
    :triggers   []
    :gates     nil
    :on-change nil
-   :access    [{:allow #{:orders/see :orders/edit} :to [:member :order/shop-id]}]})
+   :access    [{:allow #{:orders/see :orders/edit} :only :all-of-the-action :to [:member :order/shop-id]}]})
 
 (def ^:private posts
   {:table     :posts
@@ -45,8 +45,8 @@
    :triggers   []
    :gates     nil
    :on-change nil
-   :access    [{:allow :posts/read :to :anyone}
-               {:allow :comments/write :to :signed-in :when [:= :post/status "open"]}]})
+   :access    [{:allow :posts/read :only :all-of-the-action :to :anyone}
+               {:allow :comments/write :only :all-of-the-action :to :signed-in :when [:= :post/status "open"]}]})
 
 (def ^:private profiles
   {:table     :profiles
@@ -56,7 +56,7 @@
    :triggers   []
    :gates     nil
    :on-change nil
-   :access    [{:allow :profile/edit :to [:me :profile/person-id]}]})
+   :access    [{:allow :profile/edit :only :all-of-the-action :to [:me :profile/person-id]}]})
 
 (def ^:private tables [shops orders posts profiles])
 

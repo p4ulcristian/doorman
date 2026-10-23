@@ -41,7 +41,7 @@
    :references []
    :triggers   []
    :on-change  nil
-   :access     [{:allow #{:orders/see :orders/edit} :to [:member :order/shop-id]}]})
+   :access     [{:allow #{:orders/see :orders/edit} :only :all-of-the-action :to [:member :order/shop-id]}]})
 
 (def ^:private jobs
   {:table      :jobs
@@ -53,7 +53,7 @@
    :triggers   []
    :on-change  nil
    :parent     {:column :job/order-id :carries {:job/shop-id :order/shop-id}}
-   :access     [{:allow #{:jobs/see :jobs/edit} :to [:member :job/shop-id]}]})
+   :access     [{:allow #{:jobs/see :jobs/edit} :only :all-of-the-action :to [:member :job/shop-id]}]})
 
 (def ^:private photos
   {:table      :photos
@@ -65,7 +65,7 @@
    :triggers   []
    :on-change  nil
    :parent     {:column :photo/job-id :carries {:photo/shop-id :job/shop-id}}
-   :access     [{:allow #{:jobs/see :jobs/edit} :to [:member :photo/shop-id]}]})
+   :access     [{:allow #{:jobs/see :jobs/edit} :only :all-of-the-action :to [:member :photo/shop-id]}]})
 
 (def ^:private shop-emails
   {:table      :shop-emails
@@ -77,8 +77,8 @@
    :references []
    :triggers   []
    :on-change  nil
-   :access     [{:allow :shop-emails/see :to [:member :shop-email/shop-id]}
-                {:allow :shop-emails/mark-bounced :to [:system :postbox]}]})
+   :access     [{:allow :shop-emails/see :only :all-of-the-action :to [:member :shop-email/shop-id]}
+                {:allow :shop-emails/mark-bounced :only :all-of-the-action :to [:system :postbox]}]})
 
 (def ^:private tables [shops orders jobs photos shop-emails])
 
@@ -137,7 +137,7 @@
   (cellar/run-in-transaction! app-pool {:read-only? false}
                               (fn [transaction]
                                 (asking/set-asking! transaction {:person-id person-id :visitor-id nil :session-flags #{}}
-                                                    (doorman/list-actions-of-person transaction scope-kinds person-id))
+                                                    {:acting :every-action :holding (doorman/list-actions-of-person transaction scope-kinds person-id)})
                                 (f transaction))))
 
 (defn- with-database [f]
@@ -162,7 +162,7 @@
               (problems [shops orders (assoc-in shop-emails [:access 1 :to] [:system "postbox"])]))))
   (testing "a :via's :to can't be a system actor"
     (is (some #(re-find #"a system actor is named by the sentence's own :to" %)
-              (problems [shops orders (assoc-in shop-emails [:access 1] {:allow :shop-emails/mark-bounced
+              (problems [shops orders (assoc-in shop-emails [:access 1] {:allow :shop-emails/mark-bounced :only :all-of-the-action
                                                                          :via {:table :orders :match {:shop-email/shop-id :order/shop-id}
                                                                                :to [:system :postbox]}})]))))
   (testing ":parent's columns, the parent, their types, NOT NULL and the index"
@@ -227,7 +227,7 @@
         (testing "a person never holds a system's sentence"
           (is (= 0 (as-person app-pool anna #(cellar/run-statement! % mark-bounced {:address "seven@shop.test"}))))
           (let [ready (doorman/put-access-into-handlers
-                       {:emails/mark {:action :shop-emails/mark-bounced :params-shape [:map] :answer-shape [:map]
+                       {:emails/mark {:action :shop-emails/mark-bounced :scope :every-scope-holding-the-action :params-shape [:map] :answer-shape [:map]
                                       :rate-limit nil :run-steps-in nil
                                       :steps [{:name :answer :enter #(bridge/add-answer-to-context % {})}]}}
                        {:pool app-pool :tables tables :scope-kinds scope-kinds
@@ -289,4 +289,4 @@
               (is (= {:job/id (str job-id)} (:jobs/one (bridge/answer-message ready :no-rate-limits (request mia) {:jobs/one {:job/id job-id}}
                                                                           {:wire wire :log log})))
                   "Mia, in shop 9 too, still does")
-              (is (= [] (doorman/find-leaks ready (request anna) {:jobs [job-id]} {:wire wire :log log :seed 7 :size 10}))))))))))
+              (is (= [] (doorman/find-leaks ready (request anna) {:jobs [job-id]} {:wire wire :log log :scope-kinds scope-kinds :seed 7 :size 10}))))))))))

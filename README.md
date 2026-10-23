@@ -48,9 +48,9 @@ step's lines say who asked
 | what | `make-my-actions-handler` `my-actions-answer-shape` (the shape on both sides: `doorman.api`'s `.cljs` half has it too) | "what may I do?" for the browser: the asker's actions by scope, and the open ones under nil kind and id, every scope; the denies taken out; read-only, as the asker |
 | what | `make-sql-conditions` | the sentences, checked, as SQL: one condition per action and per operation, the denies in them |
 | what | `install-access-functions!` | the SQL functions the check and the gates call, and those the app's sentences and denies need (a `:via`'s, a scope state's, the guard's, `doorman."may <action> on <table>"()`), before migrate |
-| what | `put-access-into-handlers` | the check in front of every handler's steps, which run in a transaction that knows who is asking |
+| what | `put-access-into-handlers` | every handler says where it acts (`:record`, or `:scope` `[kind param]`, `:every-scope-holding-the-action`, `:no-scope`); the check in front of its steps, which run in a transaction where Postgres hears only the handler's action, in those scopes ([why](decisions/2026-10-23-a-handler-says-where-it-acts-and-postgres-hears-only-that.md)) |
 | what | `put-gates-on-tables` | the table maps with their gates, `:gates nil` on the ungated ones, and a record under a record (`:parent`) given its link to the parent and the fill of its carried columns, for cellar |
-| what | `find-leaks` | the leak test, for the app's own tests, by the app's wire and log (`:wire`, `:log`) |
+| what | `find-leaks` | the leak test, for the app's own tests, by the app's wire and log (`:wire`, `:log`); a `:scope [kind param]` handler asked in each foreign scope (`:scope-kinds`) |
 | what | `run-as-asker!` | `(f transaction)` as an asker `{:person-id :visitor-id :session-flags}`, off a message (the app's own route): held by the gates as a message's steps are |
 | what | `run-as-system!` | `(f transaction)` as a named system actor (a webhook's function): the rows the sentences give it by `[:system name]`, the open ones and the ungated tables, nothing else; the app's own role, no role that passes the gates |
 | what | `find-system-leaks` | the leak test of a system actor: the rows it must not reach, read, changed and deleted as it, undone |
@@ -100,14 +100,20 @@ every key bridge reads (`:steps :params-shape :answer-shape :rate-limit
    :triggers   []
    :on-change nil
    :visitor   {:column :order/visitor-id :moves-to :order/customer-id}   ; moved at sign-in
-   :access    [{:allow #{:orders/see :orders/edit} :to [:member :order/shop-id]}
-               {:allow #{:orders/see :orders/edit} :to [:me :order/customer-id]}
-               {:allow #{:orders/see :orders/edit} :to [:me :order/visitor-id]}    ; the visitor asking
-               {:allow :orders/see :to [:member :platform :platform/support]}
-               {:allow :orders/see :via {:table :agreements                         ; a related row exists
-                                         :match {:order/shop-id :agreement/shop-id}
-                                         :to    [:member :agreement/partner-id :agreements/see]
-                                         :when  [:= :agreement/status "active"]}}]})
+   :access    [{:allow #{:orders/see :orders/edit} :only :all-of-the-action :to [:member :order/shop-id]}
+               {:allow #{:orders/see :orders/edit} :only :all-of-the-action :to [:me :order/customer-id]}
+               {:allow #{:orders/see :orders/edit} :only :all-of-the-action :to [:me :order/visitor-id]}   ; the visitor asking
+               {:allow :orders/see :only :all-of-the-action :to [:member :platform :platform/support]}
+               {:allow :orders/see :only :all-of-the-action
+                :via {:table :agreements                                                            ; a related row exists
+                      :match {:order/shop-id :agreement/shop-id}
+                      :to    [:member :agreement/partner-id :agreements/see]
+                      :when  [:= :agreement/status "active"]}}]})
+
+;; on workstations: editing an order reads them, and only reads
+;;   {:allow :orders/edit :only #{:read} :to [:member :workstation/shop-id]}
+;; on shops, the scope's own row:
+;;   {:allow :shops/edit :only :all-of-the-action :to [:member :shop/id]}
 
 ;; the deploy, as the role that owns the tables
 (let [tables (into (doorman/put-gates-on-tables app-tables scope-kinds)
@@ -119,13 +125,19 @@ every key bridge reads (`:steps :params-shape :answer-shape :rate-limit
 ;; the app, as its own role, which owns nothing
 (def ready
   (doorman/put-access-into-handlers
-   {:orders/one {:action       :orders/see
-                 :record       [:orders :order/id]
-                 :params-shape [:map [:order/id :uuid]]
-                 :answer-shape [:map [:order/id :uuid]]
-                 :rate-limit   nil                               ; bridge's, nil for none
-                 :run-steps-in nil                               ; nil: doorman's transaction runs them
-                 :steps        [find-order add-order-answer]}}   ; they use (:doorman/transaction context)
+   {:orders/one   {:action       :orders/see
+                   :record       [:orders :order/id]               ; one row: it acts in that row's shop
+                   :params-shape [:map [:order/id :uuid]]
+                   :answer-shape [:map [:order/id :uuid]]
+                   :rate-limit   nil                               ; bridge's, nil for none
+                   :run-steps-in nil                               ; nil: doorman's transaction runs them
+                   :steps        [find-order add-order-answer]}    ; they use (:doorman/transaction context)
+    :orders/place {:action :orders/edit
+                   :scope  [:shop :order/shop-id]                  ; the shop the param names: held there, or "Not found."
+                   …}
+    :orders/mine  {:action :orders/see
+                   :scope  :every-scope-holding-the-action         ; or :no-scope: :anyone, :signed-in, [:me …] only
+                   …}}
    {:pool app-pool :tables app-tables :scope-kinds scope-kinds
     :find-session-step (doorman/make-find-session-step app-pool settings)}))
 
@@ -153,7 +165,8 @@ every key bridge reads (`:steps :params-shape :answer-shape :rate-limit
 ;=> {:answer :not-found :record {…} :memberships […] :sentences [{… :to {:holds? false :needs :orders/see …}}] :denies […]}
 
 ;; in the app's tests, with the app's wire (wire.api's make-wire-from-settings) and log (logbook's)
-(is (= [] (doorman/find-leaks ready anna-request {:orders [order-in-another-shop]} {:wire wire :log log :seed 7 :size 30})))
+(is (= [] (doorman/find-leaks ready anna-request {:orders [order-in-another-shop] :shops [another-shop]}
+                              {:wire wire :log log :scope-kinds scope-kinds :seed 7 :size 30})))
 ```
 
 The words of a sentence: `:to` is `:anyone`, `:signed-in`, `[:member
@@ -164,7 +177,12 @@ the table's `:visitor` column), `[:system name]` (a named system actor,
 [why](decisions/2026-10-23-a-named-system-actor-is-allowed-what-its-sentences-give-it.md)),
 or `:via {…}` instead of `:to`; `:when` is
 `[:= col v]`, `[:not= col v]`, `[:in col [vs]]`, `[:none col]`, `[:and …]`,
-`[:or …]`. A list narrowed to the rows the asker may do an action on:
+`[:or …]`; `:only`, on every sentence, is `:all-of-the-action` (every
+operation its kind declares) or the operations it allows on this table,
+`#{:read}`. A `[:member column]` names the column's scope, or, on a scope
+kind's own table, its primary key names the row itself, the scope. A
+handler's steps act as its action alone: Postgres counts no other
+action's sentences, and only the scopes the handler acts in. A list narrowed to the rows the asker may do an action on:
 `WHERE order__id IN (SELECT * FROM doorman."may orders/edit on orders"())`.
 A record under a record carries its parent's columns: the table map says
 `:parent {:column :job/order-id :carries {:job/shop-id :order/shop-id}}`,

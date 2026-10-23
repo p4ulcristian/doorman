@@ -1,6 +1,6 @@
 # access, piece 4: the gates
 
-> **Changed in part** by [A handler says where it acts, and Postgres hears only that](2026-10-23-a-handler-says-where-it-acts-and-postgres-hears-only-that.md) (2026-10-23, not built yet): every handler writes `:record` or `:scope` and `:reads-with`; the check asks for the action in the named shop; Postgres is told only the handler's action in those shops.
+> **Changed in part** by [A handler says where it acts, and Postgres hears only that](2026-10-23-a-handler-says-where-it-acts-and-postgres-hears-only-that.md) (2026-10-23, built on tidy-up, not released): a person's sentence counts in a gate only while its action is the one the handler acts as (`doorman.is_acting(action)`), and only for the operations its `:only` allows on the table; Postgres is told only the handler's action, in the scopes it acts in.
 
 > **Added to** by [doorman reads past its gates only inside its own functions](2026-10-23-doorman-reads-past-its-gates-only-inside-its-own-functions.md), [Visitors get sessions of their own](2026-10-23-visitors-get-sessions-and-their-rows-move-at-sign-in.md) and [:via reads related rows through a function](2026-10-23-via-reads-related-rows-through-a-function-and-guards-what-they-match.md) (2026-10-23, v0.7.0): every read gate lets doorman's own functions read; a table with a `:visitor` column lets sign-in's move through; a table a via reads guards what it matches; `install-access-functions!` takes the tables and the scope kinds.
 

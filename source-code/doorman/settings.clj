@@ -56,8 +56,8 @@
 (def explain-options-shape
   "explain-refusal's options, every key required.
    :pool: the app's own pool; the explaining runs read-only.
-   :handlers: the app's handlers, by name, each with its :action (and
-   :record).
+   :handlers: the app's handlers, by name, each with its :action and
+   where it acts (:record or :scope).
    :tables: the app's table maps, with their :access sentences.
    :scope-kinds: the app's kinds of scope (check-scope-kinds)."
   [:map {:closed true}
@@ -117,11 +117,14 @@
    doorman never makes one.
    :log: the app's log (logbook's log-function), which each message's log
    is made from, as over http; doorman never makes one.
+   :scope-kinds: the app's (check-scope-kinds): a :scope [kind param]
+   handler is asked in the foreign ids of its kind's :table.
    :seed: the same seed makes the same params every run.
    :size: how big the made-up values get (malli's 30 when it chose)."
   [:map {:closed true}
    [:wire [some? {:error/message "should be the app's wire, made by wire.api/make-wire-from-settings"}]]
    [:log [fn? {:error/message "should be the app's log function, made by logbook"}]]
+   [:scope-kinds [:map-of :keyword map?]]
    [:seed :int]
    [:size [:int {:min 0}]]])
 

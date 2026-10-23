@@ -1,12 +1,17 @@
 (ns doorman.conditions
   "Every table's sentences checked, then turned into SQL conditions: one per
-   action (the check's), and one per operation (read, insert, update,
-   delete) for the gates, joining the actions that do that operation.
+   action (the check's, every sentence of it), and one per operation (read,
+   insert, update, delete) for the gates, joining the actions that do that
+   operation, each by its sentences whose :only allows it on this table.
 
    An action's condition is its sentences joined by OR, and no deny of
    its kind saying no: a session flag (NOT doorman.has_session_flag), or
    a scope's state (the row's columns naming that kind name no scope in
-   that state, doorman.denied_…()).
+   that state, doorman.denied_…()). A person's sentences count only while
+   the transaction acts as that action (doorman.is_acting(action)): a
+   handler's steps act as its action alone, so a row another action
+   reaches is neither read nor written by them. A named system actor's
+   sentences ([:system name]) stand beside them, unfiltered.
 
    A gate adds to that: reads pass while doorman reads past the gates
    (doorman.is_passing(), in its own functions only); a table with a
@@ -60,13 +65,13 @@
             held        (or held action)
             held-kind   (scope-kinds/find-kind-of-action scope-kinds held)
             scope-kind  (if (sentences/is-column-word? x)
-                          (sentences/find-kind-named-by-column table x tables-by-key scope-kinds)
+                          (sentences/find-kind-of-member-column table x tables-by-key scope-kinds)
                           x)]
         (concat
          (when (and (sentences/is-column-word? x) (not (contains? columns x)))
            [(str where ": " x " is no column of " (:table table))])
          (when (and (sentences/is-column-word? x) (contains? columns x) (nil? scope-kind))
-           [(str where ": " x " names no scope: it must reference the table of a scope kind")])
+           [(str where ": " x " names no scope: it must reference the table of a scope kind, or be its primary key")])
          (when (and (not (sentences/is-column-word? x)) (not (contains? scope-kinds x)))
            [(str where ": " x " is no scope kind")])
          (when (and (not (sentences/is-column-word? x)) (contains? scope-kinds x) (not (get-in scope-kinds [x :single?])))
@@ -127,12 +132,33 @@
          (when (and who-column (contains? theirs who-column) (not (is-indexed? other [who-column])))
            [(str where ": " table " needs an index on [" who-column "], the via's who")]))))))
 
+(defn- find-only-problems
+  "A sentence's :only, written out: :all-of-the-action, or a non-empty set
+   of operations each of its actions does."
+  [where {:keys [only] :as sentence} actions actions-do]
+  (cond
+    (not (contains? sentence :only))
+    [(str where ": say which operations it allows, :only #{:read …} or :only :all-of-the-action")]
+
+    (= :all-of-the-action only)
+    nil
+
+    (not (and (set? only) (seq only) (every? scope-kinds/operations only)))
+    [(str where ": :only is :all-of-the-action or a non-empty set of " (pr-str (sort scope-kinds/operations)) ", not " (pr-str only))]
+
+    :else
+    (for [action (sort-by str actions)
+          :let [does (get actions-do action)]
+          :when (and does (not (every? does only)))]
+      (str where ": :only " (pr-str only) " is more than " action " does, " (pr-str does)))))
+
 (defn- find-problems-of-sentence [table place actions-do index sentence]
   (let [where   (str (:table table) " sentence " index " " (pr-str sentence))
         actions (sentences/find-allowed-actions sentence)]
     (concat
-     (when-let [extra (seq (remove #{:allow :to :when :via} (keys sentence)))]
+     (when-let [extra (seq (remove #{:allow :only :to :when :via} (keys sentence)))]
        [(str where ": a sentence doesn't know " (str/join " " extra))])
+     (find-only-problems where sentence actions actions-do)
      (when-not (= 1 (count (filter #(contains? sentence %) [:to :via])))
        [(str where ": say to whom, :to <who>, or through which related row, :via {…}; one of them")])
      (for [action actions :when (not (contains? actions-do action))]
@@ -144,8 +170,9 @@
      (when-let [condition (:when sentence)]
        (find-condition-problems where condition table))
      (for [action actions
+           :let [allowed (filter #(sentences/does-sentence-allow-operation? sentence %) (get actions-do action))]
            :when (and (#{:anyone :signed-in} (:to sentence))
-                      (some scope-kinds/writing-operations (get actions-do action))
+                      (some scope-kinds/writing-operations allowed)
                       (nil? (:when sentence)))]
        (str where ": " action " writes, so " (:to sentence) " may have it only with a :when, or through a :via")))))
 
@@ -334,24 +361,32 @@
         actions      (set (mapcat sentences/find-allowed-actions (:access table)))
         ;; the denies hold people (a session's flag, a scope's state); a
         ;; named system actor has no session and lifts a state, so its
-        ;; sentences stand beside them
-        base         (into {} (for [action actions
-                                    :let [all (sentences/find-sentences-of-action table action)]]
-                                [action {:people (join-sentences-with-or (remove sentences/is-system-sentence? all) action place)
-                                         :system (join-sentences-with-or (filter sentences/is-system-sentence? all) action place)}]))
+        ;; sentences stand beside them. A person's sentences count only for
+        ;; the action the handler acts as (doorman.is_acting), so another
+        ;; action held in the same scope opens nothing. In an operation, only
+        ;; the sentences whose :only allows it (op nil, the check's: every one).
         condition-of (fn [action op]
-                       (let [{:keys [people system]} (get base action)]
-                         (join-with-or (remove nil? [(when people (add-denies people action op table place)) system]))))
+                       (let [all    (filter #(sentences/does-sentence-allow-operation? % op)
+                                            (sentences/find-sentences-of-action table action))
+                             people (join-sentences-with-or (remove sentences/is-system-sentence? all) action place)
+                             system (join-sentences-with-or (filter sentences/is-system-sentence? all) action place)]
+                         (when (or people system)
+                           (join-with-or (remove nil? [(when people (str "((SELECT doorman.is_acting("
+                                                                         (sentences/quote-text (sentences/turn-keyword-into-text action))
+                                                                         ")) AND (" (add-denies people action op table place) "))"))
+                                                       system])))))
         for-op       (fn [op] (join-actions-with-or (for [action (sort-by str actions)
-                                                  :when (contains? (get actions-do action) op)]
-                                              (condition-of action op))))
+                                                          :when (contains? (get actions-do action) op)
+                                                          :let [condition (condition-of action op)]
+                                                          :when condition]
+                                                      condition)))
         moving       (make-moving-branch table)
         guard        (find-guard (:table table) tables)
         update-gate  (let [updates (for-op :update)]
                        (if (and guard (not= "false" updates))
                          (str "(" updates ") AND " (turn-guard-into-sql (:table table) guard table (for-op :insert)))
                          updates))]
-    {:actions    (into {} (for [action actions] [action (condition-of action nil)]))
+    {:actions    (into {} (for [action actions] [action (or (condition-of action nil) "false")]))
      :operations {:read   (join-with-or (remove #(or (nil? %) (= "false" %)) ["(SELECT doorman.is_passing())" moving (for-op :read)]))
                   :insert (for-op :insert)
                   :update (join-with-or (remove #(or (nil? %) (= "false" %)) [moving update-gate]))

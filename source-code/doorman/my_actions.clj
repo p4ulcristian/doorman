@@ -25,7 +25,7 @@
 
    It runs as the asker: the find-session step first (the Origin checked,
    the person or visitor), then one read-only transaction that tells
-   Postgres who is asking, in which the step reads doorman's tables and
+   Postgres who is asking (every action, in every scope holding it), in which the step reads doorman's tables and
    the vias' and denies' functions. It is a hint for screens: the check
    and the gates decide."
   (:require
@@ -76,7 +76,7 @@
                                 :let [held (sentences/find-held-action to action)]
                                 :when (not= held action)]
                             {:action action :held held
-                             :kind   (sentences/find-kind-named-by-column table (second to) tables-by-key scope-kinds)}))
+                             :kind   (sentences/find-kind-of-member-column table (second to) tables-by-key scope-kinds)}))
      :via-scope (distinct (for [[table {:keys [via]} action] sentences :when via
                                 [i [mine _]] (map-indexed vector (sentences/find-matched-pairs via))
                                 :let [kind (sentences/find-kind-named-by-column table mine tables-by-key scope-kinds)]
@@ -134,7 +134,8 @@
      :enter (fn [{:doorman/keys [person-id visitor-id session-flags transaction] :as context}]
               (let [held     (if person-id (memberships/list-actions-of-person transaction scope-kinds person-id) {})
                     _        (asking/set-asking! transaction {:person-id person-id :visitor-id visitor-id
-                                                              :session-flags session-flags} held)
+                                                              :session-flags session-flags}
+                                                     {:acting :every-action :holding held})
                     by-scope (-> (add-held-for held held-for)
                                  (as-> by-scope
                                        (reduce (fn [by-scope {:keys [action kind] :as via}]

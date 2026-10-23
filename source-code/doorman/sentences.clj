@@ -2,22 +2,28 @@
   "The :access sentences on a table map, turned into SQL conditions: for
    each action, one condition a row must meet for the one asking.
 
-     {:allow #{:orders/see :orders/edit} :to [:member :order/shop-id]}
-     {:allow :orders/see :to [:me :order/customer-id] :when [:= :order/status \"placed\"]}
-     {:allow :orders/see :to [:member :order/shop-id :orders/edit]}          ; holding another action there
-     {:allow :orders/see :to [:member :platform :platform/support]}          ; the one scope of a kind
-     {:allow :orders/see :via {:table :agreements
-                               :match {:order/shop-id :agreement/shop-id}
-                               :to    [:member :agreement/partner-id :agreements/see]
-                               :when  [:= :agreement/status \"active\"]}}
+     {:allow #{:orders/see :orders/edit} :only :all-of-the-action :to [:member :order/shop-id]}
+     {:allow :orders/see :only :all-of-the-action :to [:me :order/customer-id] :when [:= :order/status \"placed\"]}
+     {:allow :orders/see :only :all-of-the-action :to [:member :order/shop-id :orders/edit]}   ; holding another action there
+     {:allow :orders/see :only :all-of-the-action :to [:member :platform :platform/support]}   ; the one scope of a kind
+     {:allow :shops/edit :only :all-of-the-action :to [:member :shop/id]}                      ; on shops: the scope's own row
+     {:allow :orders/edit :only #{:read} :to [:member :workstation/shop-id]}                   ; on workstations: edit reads them
+     {:allow :orders/see :only :all-of-the-action :via {:table :agreements
+                                                       :match {:order/shop-id :agreement/shop-id}
+                                                       :to    [:member :agreement/partner-id :agreements/see]
+                                                       :when  [:= :agreement/status \"active\"]}}
 
    :to    :anyone, :signed-in, [:system name] (the named system actor,
           run-as-system!, never a person: a webhook's function), [:member column] (a member of the scope the
-          column names, whose role holds the action), [:member kind] (of the
+          column names, whose role holds the action; on a scope kind's own
+          table its primary key names the row itself), [:member kind] (of the
           one scope of a kind that has exactly one), either with a third
           element, the action they must hold there (the sentence's own
           unless said), [:me column] (the person the column names, or the
           visitor, when it is the table's :visitor column)
+   :only  which of the action's operations the sentence allows on this
+          table: :all-of-the-action (every one its kind declares), or a
+          set of them, #{:read} (written out on every sentence)
    :when  a condition on the row's own columns: [:= col value],
           [:not= col value], [:in col [values]], [:none col] (col is null),
           [:and …], [:or …]
@@ -80,11 +86,28 @@
     (when target
       (some (fn [[kind {:keys [table]}]] (when (= table target) kind)) scope-kinds))))
 
-(defn find-scope-kind-of-column
-  "The scope kind a column names; throws when it names none."
+(defn find-kind-of-own-row
+  "The scope kind whose :table this table is, when the column is its
+   one-column primary key: the row is the scope itself (a shop's own row
+   in shops). nil otherwise."
+  [{:keys [table] :as table-map} column-key scope-kinds]
+  (when (= [column-key] (find-primary-key-columns table-map))
+    (some (fn [[kind {kind-table :table}]] (when (and kind-table (= kind-table table)) kind)) scope-kinds)))
+
+(defn find-kind-of-member-column
+  "The scope kind a [:member column …] names: the kind whose table the
+   column references, or, for the primary key of a scope kind's own
+   table, that kind (the row is the scope). nil for neither."
   [table column-key tables-by-key scope-kinds]
   (or (find-kind-named-by-column table column-key tables-by-key scope-kinds)
-      (throw (ex-info (str column-key " names no scope: it must reference the table of a scope kind")
+      (find-kind-of-own-row table column-key scope-kinds)))
+
+(defn find-scope-kind-of-column
+  "The scope kind a [:member column …] names (find-kind-of-member-column);
+   throws when it names none."
+  [table column-key tables-by-key scope-kinds]
+  (or (find-kind-of-member-column table column-key tables-by-key scope-kinds)
+      (throw (ex-info (str column-key " names no scope: it must reference the table of a scope kind, or be its primary key")
                       {:type :doorman/column-names-no-scope :column column-key}))))
 
 (defn find-columns-naming-kind
@@ -195,6 +218,13 @@
 
 (defn find-allowed-actions [{:keys [allow]}]
   (if (set? allow) allow #{allow}))
+
+(defn does-sentence-allow-operation?
+  "Whether a sentence's :only lets its actions do the operation on its
+   table: :all-of-the-action, or the operation in its set. op nil (the
+   check's question, the action at all): every sentence."
+  [{:keys [only]} op]
+  (or (nil? op) (= :all-of-the-action only) (contains? only op)))
 
 (defn find-sentences-of-action
   "The sentences of a table that allow an action."

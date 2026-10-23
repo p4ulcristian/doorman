@@ -42,7 +42,7 @@
    :references []
    :triggers   []
    :on-change nil
-   :access    [{:allow #{:orders/see :orders/edit} :to [:member :order/shop-id]}]})
+   :access    [{:allow #{:orders/see :orders/edit} :only :all-of-the-action :to [:member :order/shop-id]}]})
 
 (def ^:private paul #uuid "00000000-0000-4000-8000-00000000000a")
 (def ^:private anna #uuid "00000000-0000-4000-8000-00000000000b")
@@ -58,18 +58,18 @@
 (def ^:private insert-order (cellar/make-query-from-sql-text "insert order" "INSERT INTO orders (order__shop_id) VALUES (:order/shop-id)"))
 
 (def ^:private handlers
-  {:orders/all   {:action :orders/see :params-shape [:map] :answer-shape [:vector :uuid]
+  {:orders/all   {:action :orders/see :scope :every-scope-holding-the-action :params-shape [:map] :answer-shape [:vector :uuid]
                   :rate-limit nil :run-steps-in nil
                   :steps  [{:name  :answer-all-orders
                             :enter #(bridge/add-answer-to-context
                                      % (mapv :order/id (cellar/find-rows (:doorman/transaction %) find-all-orders {})))}]}
-   :orders/sneak {:action :orders/see :params-shape [:map [:order/shop-id :uuid]] :answer-shape [:map]
+   :orders/sneak {:action :orders/see :scope [:shop :order/shop-id] :params-shape [:map [:order/shop-id :uuid]] :answer-shape [:map]
                   :rate-limit nil :run-steps-in nil
                   :steps  [{:name  :insert-order-while-only-seeing
                             :enter #(do (cellar/run-statement! (:doorman/transaction %) insert-order
                                                                  (:bridge/message-data %))
                                         (bridge/add-answer-to-context % {}))}]}
-   :orders/place {:action :orders/edit :params-shape [:map [:order/shop-id :uuid]] :answer-shape [:map]
+   :orders/place {:action :orders/edit :scope [:shop :order/shop-id] :params-shape [:map [:order/shop-id :uuid]] :answer-shape [:map]
                   :rate-limit nil :run-steps-in nil
                   :steps  [{:name  :insert-order
                             :enter #(do (cellar/run-statement! (:doorman/transaction %) insert-order
@@ -160,8 +160,8 @@
             (is (= (str "{\"orders/all\":[\"" order-99 "\"]}") (ask (:port server) (cookie bob) "{\"orders/all\":{}}")))
             (is (= "{\"orders/all\":{\"error\":\"Not found.\"}}" (ask (:port server) nil "{\"orders/all\":{}}"))
                 "nobody can hold orders/see: the list doesn't run at all"))
-          (testing "a new row in another shop is refused by the gate"
-            (is (= "{\"orders/place\":{\"error\":\"Something went wrong.\"}}"
+          (testing "a new row in another shop is refused by the check: the handler acts in the shop it names"
+            (is (= "{\"orders/place\":{\"error\":\"Not found.\"}}"
                    (ask (:port server) (cookie anna) (str "{\"orders/place\":{\"order/shop-id\":\"" shop-9 "\"}}"))))
             (is (= "{\"orders/place\":{}}"
                    (ask (:port server) (cookie anna) (str "{\"orders/place\":{\"order/shop-id\":\"" shop-7 "\"}}")))
@@ -187,9 +187,9 @@
           (testing "the leak test: Anna, asked for shop 9's order, gets nothing of it"
             (let [anna-request {:request-method :post
                                 :headers {"origin" "http://app.test" "cookie" (cookie anna)}}]
-              (is (= [] (doorman/find-leaks (select-keys ready [:orders/all]) anna-request {:orders [order-99]} {:wire wire :log log :seed 7 :size 30})))
+              (is (= [] (doorman/find-leaks (select-keys ready [:orders/all]) anna-request {:orders [order-99]} {:wire wire :log log :scope-kinds scope-kinds :seed 7 :size 30})))
               (testing "and a handler that reads past the gates is caught"
-                (let [leaky {:orders/leaky {:action :orders/see :params-shape [:map] :answer-shape [:vector :uuid]
+                (let [leaky {:orders/leaky {:action :orders/see :scope :every-scope-holding-the-action :params-shape [:map] :answer-shape [:vector :uuid]
                                             :rate-limit nil :run-steps-in nil
                                             :steps [{:name  :read-with-the-owner
                                                      :enter #(bridge/add-answer-to-context
@@ -197,7 +197,7 @@
                       ready-leaky (doorman/put-access-into-handlers leaky {:pool app-pool :tables [shops orders] :scope-kinds scope-kinds
                                                                           :find-session-step (doorman/make-find-session-step app-pool settings)})]
                   (is (= [{:handler :orders/leaky :gave-back [(str order-99)]}]
-                         (doorman/find-leaks ready-leaky anna-request {:orders [order-99]} {:wire wire :log log :seed 7 :size 30})))))))
+                         (doorman/find-leaks ready-leaky anna-request {:orders [order-99]} {:wire wire :log log :scope-kinds scope-kinds :seed 7 :size 30})))))))
           (finally
             (bridge/stop-server! server)
             (cellar/stop-pool! app-pool)

@@ -2,8 +2,9 @@
   "A transaction as a given asker, for code on the app's own route (not a
    message's steps): Postgres is told who is asking as for a message (the
    person or visitor, the session's flags, the scopes holding each of the
-   person's actions), so the gates hold the rows exactly as they hold a
-   message's."
+   person's actions), so the gates hold the rows as they hold a message's
+   check: every action of the person counts, in every scope holding it (no
+   handler names one action and its scopes here)."
   (:require
    [cellar.api :as cellar]
    [doorman.asking :as asking]
@@ -20,5 +21,6 @@
   (cellar/run-in-transaction! pool {:read-only? read-only?}
                               (fn [transaction]
                                 (asking/set-asking! transaction asker
-                                                    (if person-id (memberships/list-actions-of-person transaction scope-kinds person-id) {}))
+                                                    {:acting  :every-action
+                                                     :holding (if person-id (memberships/list-actions-of-person transaction scope-kinds person-id) {})})
                                 (f transaction))))

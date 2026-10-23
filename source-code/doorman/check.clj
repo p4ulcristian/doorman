@@ -1,31 +1,45 @@
 (ns doorman.check
-  "The check: every handler declares its :action (and its shapes), and
-   doorman puts the check in front of its steps; the app doesn't write it.
+  "The check: every handler declares its :action (and its shapes) and
+   where it acts, and doorman puts the check in front of its steps; the
+   app doesn't write it.
 
-     {:orders/one {:action       :orders/see
-                   :record       [:orders :order/id]     ; the row the message names, by this param
-                   :params-shape [:map [:order/id :uuid]]
-                   :answer-shape …
-                   :rate-limit   nil
-                   :run-steps-in nil                       ; doorman's transaction
-                   :steps        [find-order add-order-answer]}}
+     {:orders/one   {:action       :orders/see
+                     :record       [:orders :order/id]        ; the row the message names, by this param
+                     :params-shape [:map [:order/id :uuid]]
+                     :answer-shape …
+                     :rate-limit   nil
+                     :run-steps-in nil                          ; doorman's transaction
+                     :steps        [find-order add-order-answer]}
+      :orders/place {:action :orders/edit
+                     :scope  [:shop :order/shop-id]             ; the shop the param names
+                     …}
+      :orders/mine  {:action :orders/see
+                     :scope  :every-scope-holding-the-action    ; or :no-scope: only open sentences
+                     …}}
 
    Each message then runs: find the session; in one transaction (read-only
-   when the action only reads), tell
-   Postgres who is asking (doorman.asking); the check: may this person do
-   the action on the record? Not, and they can't see it either: \"Not
-   found.\" (nothing tells them it exists); not, but they can see it: \"Not
-   allowed.\"; either way no step runs. Yes: the
-   handler's steps, with :doorman/transaction in the context. A
-   handler without a :record (a list, a new row, an email) runs only if the
-   asker can have its action at all: open to them by a sentence (anyone,
-   anyone signed in, a visitor), or held somewhere (the action a [:member
-   …] needs); otherwise \"Not found.\". A session flag a deny names
-   answers \"Not allowed.\". The gates decide which rows."
+   when the action only reads), tell Postgres who is asking
+   (doorman.asking), with every action, for the check:
+   - :record: may this person do the action on the record? Not, and they
+     can't see it either: \"Not found.\" (nothing tells them it exists);
+     not, but they can see it: \"Not allowed.\".
+   - :scope [kind param]: is the action held in the scope the param names
+     (a membership above it counts)? Not: \"Not found.\"; a session flag or
+     the scope's state denying it: \"Not allowed.\".
+   - :scope :every-scope-holding-the-action: can the asker have the action
+     at all, open to them by a sentence (anyone, anyone signed in, a
+     visitor) or held somewhere? :scope :no-scope: by an open sentence
+     only. Not: \"Not found.\"; a session flag denying it: \"Not allowed.\".
+   Refused, no step runs. Let through, Postgres is told again, in the same
+   transaction: the handler's action alone, in the scopes it acts in
+   (doorman.acting), and the handler's steps run with :doorman/transaction
+   in the context. The gates decide which rows."
   (:require
    [clojure.string :as str]
    [cellar.api :as cellar]
+   [doorman.acting :as acting]
    [doorman.asking :as asking]
+   [doorman.conditions :as conditions]
    [doorman.scope-kinds :as scope-kinds]
    [doorman.sentences :as sentences]
    [bridge.api :as bridge]))
@@ -34,13 +48,44 @@
 
 (def ^:private not-allowed {:error "Not allowed."})
 
+(defn- find-where-problems
+  "Where the handler acts: exactly one of :record and :scope, each as
+   doorman knows it."
+  [handler-name {:keys [action record scope] :as handler} {:keys [conditions scope-kinds]}]
+  (let [has-record? (contains? handler :record)
+        has-scope?  (contains? handler :scope)]
+    (cond
+      (and has-record? has-scope?)
+      [(str handler-name " says both :record and :scope; it acts in one of them")]
+
+      (not (or has-record? has-scope?))
+      [(str handler-name " says neither :record nor :scope: write out where it acts, :record [table param], "
+            ":scope [kind param], :scope :every-scope-holding-the-action or :scope :no-scope")]
+
+      has-record?
+      (if-not (and (vector? record) (= 2 (count record)) (every? keyword? record))
+        [(str handler-name ": :record is [table param], like [:orders :order/id], not " (pr-str record))]
+        (when (and action (not (get-in conditions [(first record) :actions action])))
+          [(str handler-name ": no sentence on " (first record) " allows " action)]))
+
+      (contains? acting/scope-words scope)
+      nil
+
+      (and (vector? scope) (= 2 (count scope)) (simple-keyword? (first scope)) (keyword? (second scope)))
+      (when-not (contains? scope-kinds (first scope))
+        [(str handler-name ": :scope names " (first scope) ", which is no scope kind")])
+
+      :else
+      [(str handler-name ": :scope is [kind param], :every-scope-holding-the-action or :no-scope, not " (pr-str scope))])))
+
 (defn- find-problems-of-handler
   "Doorman's own keys, and bridge's written out: :steps, :rate-limit
    (nil for none) and :run-steps-in, nil, since doorman runs the steps in
    its transaction and an app's own would be replaced unseen. Both shapes
    must be real ones: the leak test makes params from :params-shape, and
-   an answer leaves only as :answer-shape allows."
-  [conditions [handler-name {:keys [action record params-shape answer-shape run-steps-in] :as handler}]]
+   an answer leaves only as :answer-shape allows. Where it acts: exactly
+   one of :record and :scope."
+  [setup [handler-name {:keys [action params-shape answer-shape run-steps-in] :as handler}]]
   (concat
    (when-not action [(str handler-name " has no :action")])
    (when-not params-shape [(str handler-name " has no :params-shape")])
@@ -49,13 +94,13 @@
          :when (not (contains? handler k))]
      (str handler-name " has no " k " (nil written out where nothing applies)"))
    (when run-steps-in [(str handler-name " has its own :run-steps-in; doorman runs the steps in its transaction, so it must be nil")])
-   (when (and record (not (get-in conditions [(first record) :actions action])))
-     [(str handler-name ": no sentence on " (first record) " allows " action)])))
+   (find-where-problems handler-name handler setup)))
 
 (defn check-handlers
-  "Throws with every problem of every handler at once."
-  [handlers conditions]
-  (let [problems (mapcat #(find-problems-of-handler conditions %) handlers)]
+  "Throws with every problem of every handler at once. setup:
+   {:conditions (make-sql-conditions) :scope-kinds}."
+  [handlers setup]
+  (let [problems (mapcat #(find-problems-of-handler setup %) handlers)]
     (when (seq problems)
       (throw (ex-info (str "The handlers have problems:\n  " (str/join "\n  " problems))
                       {:type :doorman/bad-handlers :problems (vec problems)})))))
@@ -77,12 +122,57 @@
      (str "SELECT EXISTS (" row " AND (" (get-in conditions [table-key :actions action]) ")) AS allowed, "
           "EXISTS (" row " AND (" (get-in conditions [table-key :operations :read]) ")) AS visible"))))
 
+(defn find-scope-columns
+  "[[column kind] …]: the columns of a table that name a scope for a
+   [:member …], its own primary key on a scope kind's table among them."
+  [table tables scope-kinds]
+  (let [tables-by-key (into {} (map (juxt :table identity)) tables)]
+    (vec (for [[column] (:columns table)
+               :let [kind (sentences/find-kind-of-member-column table column tables-by-key scope-kinds)]
+               :when kind]
+           [column kind]))))
+
+(defn- make-record-scopes-query
+  "The scopes the record's columns name, read once the check has let it
+   through; nil for a table with none."
+  [{:keys [tables scope-kinds]} {[table-key] :record}]
+  (let [table   (some #(when (= table-key (:table %)) %) tables)
+        columns (find-scope-columns table tables scope-kinds)]
+    (when (seq columns)
+      {:columns columns
+       :query   (cellar/make-query-from-sql-text
+                 (str "the scopes of a row of " table-key)
+                 (str "SELECT " (str/join ", " (map (comp sentences/column-name first) columns))
+                      " FROM " (cellar/turn-table-key-into-table-name table-key)
+                      " WHERE " (find-primary-key-column tables table-key) " = :record/id"))})))
+
 (defn find-flag-deny
   "The deny a session's flags say no to an action with, or nil."
   [scope-kinds action session-flags]
   (first (filter #(and (:session %) (contains? session-flags (:session %))
                        (scope-kinds/does-deny-apply? % action nil))
                  (scope-kinds/find-denies scope-kinds))))
+
+(defn find-state-deny
+  "The deny a scope's state says no to an action with in that scope, or
+   nil: a deny of the scope's kind, by its :when, the scope in that state
+   (doorman.denied_…(), read past the gates)."
+  [transaction scope-kinds action [kind scope-id]]
+  (first (filter (fn [deny]
+                   (and (= kind (:kind deny)) (:when deny) (scope-kinds/does-deny-apply? deny action nil)
+                        (:scope/denied (cellar/find-one-row
+                                        transaction
+                                        (cellar/make-query-from-sql-text
+                                         "whether a scope is in a denied state"
+                                         (str "SELECT CAST(:scope/id AS uuid) IN (SELECT * FROM "
+                                              (conditions/find-denied-function-name deny) "()) AS scope__denied"))
+                                        {:scope/id scope-id}))))
+                 (scope-kinds/find-denies scope-kinds))))
+
+(def open-ways
+  "The ways of having an action that need no scope: the only ones a
+   :scope :no-scope handler counts."
+  #{:anyone :signed-in :visitor})
 
 (defn does-way-hold?
   "Whether one way of having an action (sentences/find-way-of-sentence)
@@ -96,11 +186,11 @@
         (vector? way)      (boolean (some #(contains? % (second way)) (vals actions)))
         :else              false))
 
-(defn- may-person-have-action?
-  "For a handler without a :record: whether the asker can have its action
-   at all, by one of its ways. Which rows, the gates decide."
-  [ways context]
-  (boolean (some #(does-way-hold? % context) ways)))
+(defn find-counted-ways
+  "The ways of having the action that count for a handler acting where
+   :scope says: every one, or for :no-scope the open ones."
+  [ways scope]
+  (if (= :no-scope scope) (set (filter open-ways ways)) ways))
 
 (defn- find-reach-of-record
   "{:allowed bool :visible bool} for the record the message names."
@@ -108,21 +198,67 @@
   (cellar/find-one-row (:doorman/transaction context) query
                        {:record/id (get-in context [:bridge/message-data (second record)])}))
 
-(defn- make-check-step [{:keys [tables scope-kinds] :as setup} {:keys [record action] :as handler}]
-  (let [query (when record (make-record-query setup handler))
-        ways  (get (sentences/find-ways-of-actions tables) action #{})]
+(defn- find-record-scopes [scopes-query record context]
+  (when scopes-query
+    (let [row (cellar/find-one-row (:doorman/transaction context) (:query scopes-query)
+                                   {:record/id (get-in context [:bridge/message-data (second record)])})]
+      (for [[column kind] (:columns scopes-query)
+            :let [id (get row column)]
+            :when id]
+        [kind id]))))
+
+(defn- check-record
+  "{:answer …} or {:scopes […]}: the record's scopes, and the sideways ones."
+  [{:keys [query scopes-query sideways]} {:keys [record]} context]
+  (let [{:keys [allowed visible]} (find-reach-of-record query record context)]
+    (cond allowed {:scopes (concat (find-record-scopes scopes-query record context)
+                                   (filter #(contains? sideways (first %)) (keys (:doorman/actions context))))}
+          visible {:answer not-allowed}
+          :else   {:answer not-found})))
+
+(defn- check-named-scope
+  "{:answer …} or {:scopes [the scope]}: the action held there, and no
+   deny saying no."
+  [{:keys [scope-kinds needs]} {:keys [action] [kind param] :scope} context]
+  (let [scope-id (get-in context [:bridge/message-data param])
+        scope    [kind scope-id]]
+    (cond (not (and (uuid? scope-id) (acting/is-held-there? needs action scope (:doorman/actions context))))
+          {:answer not-found}
+          (find-flag-deny scope-kinds action (:doorman/session-flags context))
+          {:answer not-allowed}
+          (find-state-deny (:doorman/transaction context) scope-kinds action scope)
+          {:answer not-allowed}
+          :else
+          {:scopes [scope]})))
+
+(defn- check-ways
+  "{:answer …} or {:scopes […]}, for :every-scope-holding-the-action and
+   :no-scope: the asker can have the action by a way that counts."
+  [{:keys [scope-kinds ways]} {:keys [action scope]} context]
+  (cond (not-any? #(does-way-hold? % context) (find-counted-ways ways scope))
+        {:answer not-found}
+        (find-flag-deny scope-kinds action (:doorman/session-flags context))
+        {:answer not-allowed}
+        :else
+        {:scopes (if (= :no-scope scope) [] (keys (:doorman/actions context)))}))
+
+(defn- make-check-step [{:keys [tables needs] :as setup} {:keys [record scope action] :as handler}]
+  (let [prepared (assoc setup
+                        :query        (when record (make-record-query setup handler))
+                        :scopes-query (when record (make-record-scopes-query setup handler))
+                        :sideways     (acting/find-sideways-kinds needs action)
+                        :ways         (get (sentences/find-ways-of-actions tables) action #{}))]
     {:name  :doorman/check
-     :enter (fn [context]
-              (if query
-                (let [{:keys [allowed visible]} (find-reach-of-record query record context)]
-                  (cond allowed context
-                        visible (bridge/add-answer-to-context context not-allowed)
-                        :else   (bridge/add-answer-to-context context not-found)))
-                (cond (not (may-person-have-action? ways context))
-                      (bridge/add-answer-to-context context not-found)
-                      (find-flag-deny scope-kinds action (:doorman/session-flags context))
-                      (bridge/add-answer-to-context context not-allowed)
-                      :else context)))}))
+     :enter (fn [{:doorman/keys [transaction person-id visitor-id session-flags actions] :as context}]
+              (let [{:keys [answer scopes]} (cond record         (check-record prepared handler context)
+                                                  (vector? scope) (check-named-scope prepared handler context)
+                                                  :else           (check-ways prepared handler context))]
+                (if answer
+                  (bridge/add-answer-to-context context answer)
+                  ;; from here on, Postgres hears only the handler's action, in its scopes
+                  (do (asking/set-asking! transaction {:person-id person-id :visitor-id visitor-id :session-flags session-flags}
+                                          (acting/make-telling needs action scopes actions))
+                      context))))}))
 
 (defn- does-action-only-read?
   "An action that does nothing but :read runs in a read-only transaction:
@@ -139,18 +275,22 @@
                                     (fn [transaction]
                                       (let [{:doorman/keys [person-id visitor-id session-flags]} context
                                             actions (if person-id (list-actions transaction person-id) {})]
-                                        (asking/set-asking! transaction {:person-id person-id :visitor-id visitor-id :session-flags session-flags} actions)
+                                        ;; the check reads with every action; it then tells only the handler's
+                                        (asking/set-asking! transaction {:person-id person-id :visitor-id visitor-id :session-flags session-flags}
+                                                            {:acting :every-action :holding actions})
                                         (run (assoc context
                                                     :doorman/transaction transaction
                                                     :doorman/actions actions)))))))))
 
 (defn put-access-into-handlers
   "Every handler checked, then given the check in front of its steps and the
-   running of them in a transaction that knows who is asking."
-  [handlers setup]
-  (check-handlers handlers (:conditions setup))
-  (update-vals handlers
-               (fn [handler]
-                 (-> handler
-                     (update :steps #(into [(make-check-step setup handler)] %))
-                     (assoc :run-steps-in (make-run-steps-in setup handler))))))
+   running of them in a transaction that knows who is asking. setup:
+   {:pool :tables :scope-kinds :find-session-step :conditions :list-actions}."
+  [handlers {:keys [tables scope-kinds] :as setup}]
+  (check-handlers handlers setup)
+  (let [setup (assoc setup :needs (acting/find-needs tables scope-kinds))]
+    (update-vals handlers
+                 (fn [handler]
+                   (-> handler
+                       (update :steps #(into [(make-check-step setup handler)] %))
+                       (assoc :run-steps-in (make-run-steps-in setup handler)))))))

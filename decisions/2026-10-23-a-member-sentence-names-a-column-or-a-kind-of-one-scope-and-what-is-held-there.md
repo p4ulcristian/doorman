@@ -1,5 +1,7 @@
 # [:member …] names a column or a kind of one scope, and may name the action held there
 
+> **Changed in part** by [A handler says where it acts, and Postgres hears only that](2026-10-23-a-handler-says-where-it-acts-and-postgres-hears-only-that.md) (2026-10-23, built on tidy-up, not released): on a scope kind's own table, `[:member <its primary key>]` names the row itself, the scope (`[:member :shop/id]` on `shops`); it was refused, "names no scope".
+
 > Since v0.7.0. Builds "A kind of scope may have exactly one scope" of [Access rules are sentences in doorman's language](2026-10-17-access-rules-are-sentences-in-doormans-language.md), its "Settled while building" (`[:member <scope> <action>]`), and the platform's side of [A record between fixed sides carries them](2026-10-13-a-record-between-fixed-sides-carries-them.md).
 
 **Decision:**

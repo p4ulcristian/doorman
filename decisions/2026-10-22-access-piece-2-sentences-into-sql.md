@@ -1,5 +1,7 @@
 # access, piece 2: sentences into SQL conditions
 
+> **Changed in part** by [A handler says where it acts, and Postgres hears only that](2026-10-23-a-handler-says-where-it-acts-and-postgres-hears-only-that.md) (2026-10-23, built on tidy-up, not released): every sentence writes `:only` (`:all-of-the-action` or the operations it allows on its table), and an operation's condition takes an action's sentence only for the operations its `:only` allows; a person's sentences count only while their action is the one acted as (`doorman.is_acting(action)`).
+
 > **Added to** by [:via reads related rows through a function, and guards what they match](2026-10-23-via-reads-related-rows-through-a-function-and-guards-what-they-match.md), [[:member …] names a column or a kind of one scope, and may name the action held there](2026-10-23-a-member-sentence-names-a-column-or-a-kind-of-one-scope-and-what-is-held-there.md), [A session flag and a scope's state may say no](2026-10-23-a-session-flag-and-a-scopes-state-may-say-no.md) and [Visitors get sessions of their own](2026-10-23-visitors-get-sessions-and-their-rows-move-at-sign-in.md) (2026-10-23, v0.7.0): the words left out of v1.
 
 > **Changed in part** by [doorman is its own library](2026-10-22-doorman-is-its-own-library.md) (2026-10-22): the functions are `doorman.find_scopes_holding(kind, action)` and `doorman.find_asking_person()`.

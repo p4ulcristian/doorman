@@ -246,15 +246,19 @@
 
 (defn make-sql-conditions
   "The :access sentences of every table map, checked (unknown actions or
-   columns, an open write without a :when or a :via, a :via without its
-   indexes, a [:member kind] of a kind with more than one scope: every
-   problem at once) and turned into SQL conditions, the kinds' denies in
-   them:
+   columns, a sentence without :only or with an :only beyond what one of
+   its actions does, an open write without a :when or a :via, a :via
+   without its indexes, a [:member kind] of a kind with more than one
+   scope: every problem at once) and turned into SQL conditions, the
+   kinds' denies in them:
 
      {:orders {:actions    {:orders/see \"…\" :orders/edit \"…\"}
                :operations {:read \"…\" :insert \"…\" :update \"…\" :delete \"…\"}}}
 
-   The check uses an action's condition; the gates use an operation's."
+   The check uses an action's condition, every sentence of it; the gates
+   use an operation's, each action by the sentences whose :only allows that
+   operation on the table, and each person's sentence only while its action
+   is the one acted as (doorman.is_acting)."
   [tables scope-kinds]
   (conditions/make-sql-conditions tables scope-kinds))
 
@@ -265,8 +269,8 @@
   "Installs, or replaces, the folder doorman and the SQL functions the
    check and the gates read who is asking from (doorman.find_asking_person(),
    find_asking_visitor(), find_scopes_holding(kind, action),
-   has_session_flag(flag), is_passing(), find_moving_visitor(),
-   find_moving_person()), and those the app's sentences and denies need:
+   is_acting(action), has_session_flag(flag), is_passing(),
+   find_moving_visitor(), find_moving_person()), and those the app's sentences and denies need:
    a :via's (doorman.via_…), a scope state's (doorman.denied_…), the guard
    of a table a :via reads (doorman.unchanged_…), and, per table with a
    one-column primary key and per action of its sentences, the one a query
@@ -287,17 +291,30 @@
       (cellar/run-statement! pool (cellar/make-query-from-sql-text "a function of doorman's" statement) {}))))
 
 (defn put-access-into-handlers
-  "Every handler (bridge's table) checked for :action, :params-shape and
-   :answer-shape, and for a sentence allowing its action on its :record;
-   then each gets the check in front of its steps and runs them in one
-   transaction that tells Postgres who is asking (the person or visitor,
-   the session's flags, the scopes holding each action). A message naming
-   a record its asker may not reach is answered \"Not found.\", one they
-   may see but not act on \"Not allowed.\", before the handler's own
-   steps; a handler without a :record runs only for an asker who can have
-   its action at all (\"Not found.\"), and not when a session flag denies
-   it (\"Not allowed.\"). The options, every key
-   required, are checked first:
+  "Every handler (bridge's table) checked, with every problem at once: its
+   :action, :params-shape and :answer-shape, and where it acts, exactly
+   one of, written out:
+
+     :record [:orders :order/id]              one row, by its param; a sentence on the table allows the action
+     :scope  [:shop :shop/id]                 a scope kind, and the param holding the scope's id
+     :scope  :every-scope-holding-the-action  a list over every scope where the action is held
+     :scope  :no-scope                        only :anyone, :signed-in and [:me …] sentences
+
+   Then each gets the check in front of its steps and runs them in one
+   transaction that tells Postgres who is asking. The check: a record its
+   asker may not reach answers \"Not found.\", one they may see but not act
+   on \"Not allowed.\"; a :scope [kind param] whose scope doesn't hold the
+   action (a membership above it counts) \"Not found.\", one a session flag
+   or the scope's state denies \"Not allowed.\"; :every-scope-holding-the-action
+   runs for an asker who can have the action at all, :no-scope for one an
+   open sentence gives it to (\"Not found.\"), and not when a session flag
+   denies it (\"Not allowed.\"). Let through, the steps' Postgres hears only
+   the handler's action, in the scopes it acts in: the named one; the
+   record's (its columns', and the kinds its action reaches through a
+   [:member <kind of one scope>] or a :via); every one holding it; none. A
+   step writing a row in another scope, by a bug or a crafted param, is
+   refused by the gate. The options, every key required, are checked
+   first:
 
      (doorman/put-access-into-handlers handlers {:pool pool :tables tables :scope-kinds scope-kinds
                                                  :find-session-step (doorman/make-find-session-step pool settings)})
@@ -361,7 +378,7 @@
    a scope's state, out of that scope. Nobody signed in gets the :anyone
    actions only. The params are {}; the answer is my-actions-answer-shape.
    It runs as the asker: the find-session step first, then a read-only
-   transaction telling Postgres who is asking, in which its step reads
+   transaction telling Postgres who is asking (every action), in which its step reads
    doorman's tables (so doorbell's notes name them). It is
    ready as it is: not for put-access-into-handlers, which wants an
    :action. The app names it; groundwork: :doorman/my-actions.
@@ -381,7 +398,7 @@
    and reads past the gates, so the record is seen even when the asker
    can't. options, every key required: {:pool :handlers :tables
    :scope-kinds}, the app's handlers by name (each with its :action and
-   :record); asker: {:person-id :visitor-id :session-flags}.
+   its :record or :scope); asker: {:person-id :visitor-id :session-flags}.
 
      (doorman/explain-refusal {:pool pool :handlers handlers :tables tables :scope-kinds scope-kinds}
                               {:person-id anna :visitor-id nil :session-flags #{}}
@@ -398,9 +415,12 @@
      ;                 :when {:says [:= :order/status \"open\"] :holds? true}}]
      ;    :denies [{:scope-kind :shop :deny {:deny :writes :when …} :says-no? false :scope-ids []}]}
 
-   A handler without a :record: :record nil, and each sentence's :way
+   A handler with a :record has :scope nil. One with a :scope: :record
+   nil, :scope {:says [:shop :shop/id] :scope-kind :shop :scope-id #uuid \"…\"
+   :held-there? true} (or {:says :no-scope}), and each sentence's :way
    (:anyone :signed-in :visitor [:holds action]) and whether it :holds?
-   for the asker; the :answer is the check's. An unknown handler:
+   for the asker (for :no-scope, only an open way can); the :answer is the
+   check's. An unknown handler:
    {:handler … :answer :no-such-handler}."
   [options asker handler-name params]
   (explain/explain-refusal (settings/check-explain-options options) (settings/check-asker asker) handler-name params))
@@ -425,9 +445,10 @@
 (defn run-as-asker!
   "Runs (f transaction) in one transaction of its own, as an asker
    {:person-id :visitor-id :session-flags}: code on the app's own route
-   (a sign-in callback, a page that reads rows) held by the gates exactly
-   as a message's steps are, the person's scopes and actions, the
-   visitor, the session's flags. options, every key required:
+   (a sign-in callback, a page that reads rows) held by the gates by the
+   person's scopes and actions, the visitor, the session's flags: every
+   action the person holds counts, in every scope holding it (no handler
+   narrows it to one action and its scopes). options, every key required:
    {:read-only? false :scope-kinds scope-kinds} (the checked scope kinds).
    A transaction handed in is refused.
 
@@ -450,15 +471,18 @@
 (defn find-leaks
   "The leak test, for an app's own test suite: every handler (made ready by
    put-access-into-handlers) asked by the person of request (signed in to
-   one scope) with foreign-ids, the ids of another scope's rows by table,
-   {:orders [id …]}. A handler with a :record must answer \"Not found.\" for
-   each; any other must give none of them back. Its other params come from
-   its :params-shape, by malli's generator, with the options' :seed and
-   :size. Each message is answered as over http, by the options' :wire, the
-   app's wire, and :log, the app's log (doorman makes neither). Every
-   option is required. Returns every leak; empty means none.
+   one scope) with foreign-ids, the ids of rows and scopes she must not
+   reach, by table, {:orders [id …] :shops [id …]}. A handler with a
+   :record must answer \"Not found.\" for each of its table's; one with
+   :scope [kind param] must answer \"Not found.\" with each id of its kind's
+   :table (the options' :scope-kinds) in its param; any other must give
+   none of them back. Its other params come from its :params-shape, by
+   malli's generator, with the options' :seed and :size. Each message is
+   answered as over http, by the options' :wire, the app's wire, and
+   :log, the app's log (doorman makes neither). Every option is required.
+   Returns every leak; empty means none.
 
-     (is (= [] (doorman/find-leaks ready-handlers anna-request {:orders [order-in-shop-9]}
-                                   {:wire wire :log log :seed 7 :size 30})))"
+     (is (= [] (doorman/find-leaks ready-handlers anna-request {:orders [order-in-shop-9] :shops [shop-9]}
+                                   {:wire wire :log log :scope-kinds scope-kinds :seed 7 :size 30})))"
   [handlers request foreign-ids options]
   (leaks/find-leaks handlers request foreign-ids (settings/check-leak-options options)))

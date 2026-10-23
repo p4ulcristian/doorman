@@ -10,6 +10,7 @@
   (:require
    [clojure.string :as str]
    [cellar.api :as cellar]
+   [doorman.acting :as acting]
    [doorman.asking :as asking]
    [doorman.check :as check]
    [doorman.conditions :as conditions]
@@ -36,12 +37,20 @@
                                       {:explain/id id})))))
 
 (defn- find-row-scopes
-  "The scopes the row's columns name: [{:column :scope-kind :scope-id}]."
+  "The scopes the row's columns name: [{:column :scope-kind :scope-id}],
+   its own primary key on a scope kind's table among them (the row is the
+   scope)."
   [table row {:keys [tables-by-key scope-kinds]}]
   (vec (for [[column] (:columns table)
-             :let [kind (sentences/find-kind-named-by-column table column tables-by-key scope-kinds)]
+             :let [kind (sentences/find-kind-of-member-column table column tables-by-key scope-kinds)]
              :when kind]
          {:column column :scope-kind kind :scope-id (get row column)})))
+
+(defn- find-denied-row-scopes
+  "The row's scopes a state deny holds for: those its columns reference,
+   not the scope's own row, which the app changes to lift the state."
+  [table row-scopes {:keys [tables-by-key scope-kinds]}]
+  (filterv #(sentences/find-kind-named-by-column table (:column %) tables-by-key scope-kinds) row-scopes))
 
 (defn- explain-to
   "What a :to word says of the row, and whether it holds."
@@ -56,7 +65,7 @@
     (let [[_ x] to
           needs (sentences/find-held-action to action)]
       (if (sentences/is-column-word? x)
-        (let [kind  (sentences/find-kind-named-by-column table x tables-by-key scope-kinds)
+        (let [kind  (sentences/find-kind-of-member-column table x tables-by-key scope-kinds)
               scope [kind (get row x)]]
           {:says to :holds? holds? :scope-kind kind :scope-id (get row x) :needs needs
            :held-there? (contains? (get actions-by-scope scope) needs)})
@@ -126,26 +135,50 @@
                           (mapv #(explain-sentence transaction table id row % action actions-by-scope place)
                                 (sentences/find-sentences-of-action table action))
                           [])
-     :denies            (explain-denies transaction scope-kinds action (:session-flags asker) (or row-scopes []))}))
+     :denies            (explain-denies transaction scope-kinds action (:session-flags asker)
+                                        (if row-scopes (find-denied-row-scopes table row-scopes place) []))}))
 
-(defn- explain-no-record [transaction {:keys [tables scope-kinds]} asker action actions-by-scope]
+(defn- explain-named-scope
+  "For a :scope [kind param] handler: the scope the param names, whether
+   the action is held there, and the check's answer."
+  [transaction scope-kinds needs asker action [kind param] params actions-by-scope]
+  (let [scope-id (get params param)
+        held?    (and (uuid? scope-id) (acting/is-held-there? needs action [kind scope-id] actions-by-scope))
+        state    (when held? (check/find-state-deny transaction scope-kinds action [kind scope-id]))]
+    {:scope  {:says [kind param] :scope-kind kind :scope-id scope-id :held-there? held?}
+     :answer (cond (not held?)                                                 :not-found
+                   (check/find-flag-deny scope-kinds action (:session-flags asker)) :not-allowed
+                   state                                                       :not-allowed
+                   :else                                                       :allowed)}))
+
+(defn- explain-no-record [transaction {:keys [tables scope-kinds]} asker {:keys [action scope]} params actions-by-scope]
   (let [tables-by-key (into {} (map (juxt :table identity)) tables)
         context       {:doorman/person-id (:person-id asker) :doorman/visitor-id (:visitor-id asker)
                        :doorman/actions actions-by-scope}
         explained     (vec (for [table tables
                                  sentence (sentences/find-sentences-of-action table action)
                                  :let [way (sentences/find-way-of-sentence sentence action table tables-by-key)]]
-                             {:table (:table table) :sentence sentence :way way :holds? (check/does-way-hold? way context)}))
-        flag-deny     (check/find-flag-deny scope-kinds action (:session-flags asker))]
+                             {:table (:table table) :sentence sentence :way way
+                              :holds? (and (contains? (check/find-counted-ways #{way} scope) way)
+                                           (check/does-way-hold? way context))}))
+        flag-deny     (check/find-flag-deny scope-kinds action (:session-flags asker))
+        named         (when (vector? scope)
+                        (explain-named-scope transaction scope-kinds (acting/find-needs tables scope-kinds)
+                                             asker action scope params actions-by-scope))]
     {:record            nil
-     :answer            (cond (not-any? :holds? explained) :not-found
+     :scope             (if named (:scope named) {:says scope})
+     :answer            (cond named                       (:answer named)
+                              (not-any? :holds? explained) :not-found
                               flag-deny                   :not-allowed
                               :else                       :allowed)
      :memberships       nil
      :actions-in-scopes (vec (for [[[kind id] actions] (sort-by (comp str key) actions-by-scope)]
                                {:scope-kind kind :scope-id id :actions (vec (sort-by str actions))}))
      :sentences         explained
-     :denies            (explain-denies transaction scope-kinds action (:session-flags asker) [])}))
+     :denies            (explain-denies transaction scope-kinds action (:session-flags asker)
+                                        (if (and named (:held-there? (:scope named)))
+                                          [{:column nil :scope-kind (first scope) :scope-id (:scope-id (:scope named))}]
+                                          []))}))
 
 (defn explain-refusal
   "The explanation, plain data; the options and the asker checked already."
@@ -159,12 +192,13 @@
                                       (let [actions-by-scope (if (:person-id asker)
                                                                (memberships/list-actions-of-person transaction scope-kinds (:person-id asker))
                                                                {})]
-                                        (asking/set-asking! transaction asker actions-by-scope)
+                                        (asking/set-asking! transaction asker {:acting :every-action :holding actions-by-scope})
                                         (asking/set-passing! transaction)
                                         (merge {:handler handler-name
                                                 :action  action
                                                 :writes? (scope-kinds/does-action-write? scope-kinds action)
                                                 :asker   asker}
                                                (if record
-                                                 (explain-record transaction options conditions asker action record params actions-by-scope)
-                                                 (explain-no-record transaction options asker action actions-by-scope))))))))))
+                                                 (assoc (explain-record transaction options conditions asker action record params actions-by-scope)
+                                                        :scope nil)
+                                                 (explain-no-record transaction options asker handler params actions-by-scope))))))))))

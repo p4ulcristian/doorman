@@ -67,12 +67,12 @@
    :triggers   []
    :on-change nil
    :visitor   {:column :order/visitor-id :moves-to :order/customer-id}
-   :access    [{:allow #{:orders/see :orders/edit} :to [:member :order/shop-id]}
-               {:allow #{:orders/see :orders/edit} :to [:me :order/customer-id]}
-               {:allow #{:orders/see :orders/edit} :to [:me :order/visitor-id]}
-               {:allow :orders/note :to [:member :order/shop-id :orders/edit]}
-               {:allow :orders/see :to [:member :platform :platform/support]}
-               {:allow :orders/see :via {:table :agreements
+   :access    [{:allow #{:orders/see :orders/edit} :only :all-of-the-action :to [:member :order/shop-id]}
+               {:allow #{:orders/see :orders/edit} :only :all-of-the-action :to [:me :order/customer-id]}
+               {:allow #{:orders/see :orders/edit} :only :all-of-the-action :to [:me :order/visitor-id]}
+               {:allow :orders/note :only :all-of-the-action :to [:member :order/shop-id :orders/edit]}
+               {:allow :orders/see :only :all-of-the-action :to [:member :platform :platform/support]}
+               {:allow :orders/see :only :all-of-the-action :via {:table :agreements
                                          :match {:order/shop-id :agreement/shop-id}
                                          :to    [:member :agreement/partner-id :agreements/see]
                                          :when  [:= :agreement/status "active"]}}]})
@@ -88,8 +88,8 @@
    :references []
    :triggers   []
    :on-change nil
-   :access    [{:allow #{:agreements/see :agreements/accept} :to [:member :agreement/partner-id]}
-               {:allow :agreements/make :to [:member :agreement/shop-id]}]})
+   :access    [{:allow #{:agreements/see :agreements/accept} :only :all-of-the-action :to [:member :agreement/partner-id]}
+               {:allow :agreements/make :only :all-of-the-action :to [:member :agreement/shop-id]}]})
 
 (def ^:private tables [companies shops partners orders agreements])
 
@@ -146,9 +146,9 @@
    :orders/note   {:action :orders/note :record [:orders :order/id] :params-shape [:map [:order/id :uuid]]
                    :answer-shape [:map [:order/id :uuid]] :rate-limit nil :run-steps-in nil
                    :steps [(answer-with #(select-keys (:bridge/message-data %) [:order/id]))]}
-   :orders/all    {:action :orders/see :params-shape [:map] :answer-shape [:vector :uuid] :rate-limit nil :run-steps-in nil
+   :orders/all    {:action :orders/see :scope :every-scope-holding-the-action :params-shape [:map] :answer-shape [:vector :uuid] :rate-limit nil :run-steps-in nil
                    :steps [(answer-with #(mapv :order/id (cellar/find-rows (:doorman/transaction %) find-all-orders {})))]}
-   :orders/place  {:action :orders/edit :params-shape [:map [:order/shop-id :uuid]] :answer-shape [:map] :rate-limit nil
+   :orders/place  {:action :orders/edit :scope [:shop :order/shop-id] :params-shape [:map [:order/shop-id :uuid]] :answer-shape [:map] :rate-limit nil
                    :run-steps-in nil
                    :steps [(answer-with #(do (cellar/run-statement! (:doorman/transaction %) insert-order (:bridge/message-data %)) {}))]}})
 
@@ -224,7 +224,8 @@
       (cellar/run-in-transaction! app-pool {:read-only? false}
                                   (fn [transaction]
                                     (asking/set-asking! transaction (merge {:person-id nil :visitor-id nil :session-flags #{}} asker)
-                                                        (if-let [person (:person-id asker)] (doorman/list-actions-of-person transaction scope-kinds person) {}))
+                                                        {:acting  :every-action
+                                                         :holding (if-let [person (:person-id asker)] (doorman/list-actions-of-person transaction scope-kinds person) {})})
                                     (vreset! result (f transaction))
                                     (throw (ex-info "roll back" {::roll-back true}))))
       (catch clojure.lang.ExceptionInfo e
@@ -267,13 +268,13 @@
     (is (some #(re-find #"needs an index on \[:agreement/shop-id\]" %)
               (problems (assoc tables 4 (assoc agreements :indexes [[:agreement/partner-id]])))))
     (is (some #(re-find #"must have exactly one scope" %)
-              (problems (assoc tables 3 (assoc orders :access [{:allow :orders/see :to [:member :shop]}])))))
+              (problems (assoc tables 3 (assoc orders :access [{:allow :orders/see :only :all-of-the-action :to [:member :shop]}])))))
     (is (some #(re-find #"names the action held on the related row" %)
-              (problems (assoc tables 3 (assoc orders :access [{:allow :orders/see :via (assoc (:via (last (:access orders)))
+              (problems (assoc tables 3 (assoc orders :access [{:allow :orders/see :only :all-of-the-action :via (assoc (:via (last (:access orders)))
                                                                                                :to [:member :agreement/partner-id])}])))))
     (is (some #(re-find #"nobody in a shop can hold :company/report" %)
-              (problems (assoc tables 3 (assoc orders :access [{:allow :orders/see :to [:member :order/shop-id :company/report]}])))))
-    (is (= [] (problems (assoc tables 3 (assoc orders :access [{:allow :orders/edit :via {:table :agreements :match {:order/shop-id :agreement/shop-id}
+              (problems (assoc tables 3 (assoc orders :access [{:allow :orders/see :only :all-of-the-action :to [:member :order/shop-id :company/report]}])))))
+    (is (= [] (problems (assoc tables 3 (assoc orders :access [{:allow :orders/edit :only :all-of-the-action :via {:table :agreements :match {:order/shop-id :agreement/shop-id}
                                                                                           :to :signed-in}}]))))
         "an open write narrowed by a :via")
     (is (some #(re-find #":visitor's column" %)
@@ -443,7 +444,7 @@
                      (set (map :way (:sentences answer)))))))
 
           (testing "the leak test, for each asker, with the rows they must not reach"
-            (let [leaks #(doorman/find-leaks ready (request-of %1) {:orders %2} {:wire wire :log log :seed 7 :size 30})]
+            (let [leaks #(doorman/find-leaks ready (request-of %1) {:orders %2} {:wire wire :log log :scope-kinds scope-kinds :seed 7 :size 30})]
               (is (= [] (leaks (sign-in anna #{}) [order-80 order-99 order-c order-v])) "Staff of shop 7")
               (is (= [] (leaks (sign-in dora #{}) [order-80 order-99 order-v])) "the Director")
               (is (= [] (leaks (sign-in pia #{}) [order-80 order-99 order-c])) "the partner, through the via")

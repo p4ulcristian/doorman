@@ -1,6 +1,6 @@
 # access, piece 3: the check, put in front of every handler
 
-> **Changed in part** by [A handler says where it acts, and Postgres hears only that](2026-10-23-a-handler-says-where-it-acts-and-postgres-hears-only-that.md) (2026-10-23, not built yet): every handler writes `:record` or `:scope` and `:reads-with`; the check asks for the action in the named shop; Postgres is told only the handler's action in those shops.
+> **Changed in part** by [A handler says where it acts, and Postgres hears only that](2026-10-23-a-handler-says-where-it-acts-and-postgres-hears-only-that.md) (2026-10-23, built on tidy-up, not released): every handler writes `:record` or `:scope` (`[kind param]`, `:every-scope-holding-the-action`, `:no-scope`); with `:scope [kind param]` the check asks for the action in the named scope; once the check lets a message through, Postgres is told only the handler's action, in the scopes it acts in.
 
 > **Added to** by [A session flag and a scope's state may say no](2026-10-23-a-session-flag-and-a-scopes-state-may-say-no.md) and [Visitors get sessions of their own](2026-10-23-visitors-get-sessions-and-their-rows-move-at-sign-in.md) (2026-10-23, v0.7.0): who is asking carries the visitor and the session's flags; a handler without a `:record` runs for an asker who can have its action by a way (open, a visitor's, an action held somewhere) and answers "Not allowed." when a session flag denies it.
 
