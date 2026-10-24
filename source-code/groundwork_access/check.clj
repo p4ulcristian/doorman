@@ -33,7 +33,7 @@
      :groundwork-access/not-allowed.
    Refused while nobody is signed in, the reason is :groundwork-access/signed-out,
    whichever of the two it was: a signed-out asker learns nothing of the
-   record. Refused, no step runs (bridge's refuse; groundwork-access adds its
+   record. Refused, no step runs (groundwork-steps's refuse; groundwork-access adds its
    reasons to every handler's :refusals). Let through, Postgres is told again, in the same
    transaction: the handler's action alone, in the scopes it acts in
    (groundwork_access.acting). Then every param its :params-shape marks as a row of
@@ -52,7 +52,7 @@
    [groundwork-access.scope-kinds :as scope-kinds]
    [groundwork-access.sentences :as sentences]
    [groundwork-access.shapes :as shapes]
-   [groundwork-bridge.api :as bridge]))
+   [groundwork-steps.api :as steps]))
 
 (def ^:private not-found :groundwork-access/not-found)
 
@@ -230,12 +230,12 @@
   "{:allowed bool :visible bool} for the record the message names."
   [query record context]
   (postgres/find-one-row (:groundwork-access/transaction context) query
-                       {:record/id (get-in context [:groundwork-bridge/message-data (second record)])}))
+                       {:record/id (get-in context [:groundwork-steps/message-data (second record)])}))
 
 (defn- find-record-scopes [scopes-query record context]
   (when scopes-query
     (let [row (postgres/find-one-row (:groundwork-access/transaction context) (:query scopes-query)
-                                   {:record/id (get-in context [:groundwork-bridge/message-data (second record)])})]
+                                   {:record/id (get-in context [:groundwork-steps/message-data (second record)])})]
       (for [[column kind] (:columns scopes-query)
             :let [id (get row column)]
             :when id]
@@ -254,7 +254,7 @@
   "{:answer …} or {:scopes [the scope]}: the action held there, and no
    deny saying no."
   [{:keys [scope-kinds needs]} {:keys [action] [kind param] :scope} context]
-  (let [scope-id (get-in context [:groundwork-bridge/message-data param])
+  (let [scope-id (get-in context [:groundwork-steps/message-data param])
         scope    [kind scope-id]]
     (cond (not (and (uuid? scope-id) (acting/is-held-there? needs action scope (:groundwork-access/actions context))))
           {:answer not-found}
@@ -290,15 +290,15 @@
                                                   (vector? scope) (check-named-scope prepared handler context)
                                                   :else           (check-ways prepared handler context))]
                 (if answer
-                  (bridge/refuse context (find-refusal-reason answer person-id) nil)
+                  (steps/refuse context (find-refusal-reason answer person-id) nil)
                   ;; from here on, Postgres hears only the handler's action, in its scopes
                   (do (asking/set-asking! transaction {:person-id person-id :visitor-id visitor-id :session-flags session-flags}
                                           (acting/make-telling needs action scopes actions))
                       ;; every marked param a row the action reads there, before any step
                       (if (and (seq marks)
                                (not-every? :readable? (rows-of/find-readable transaction readable
-                                                                             (rows-of/find-marked-ids marks (:groundwork-bridge/message-data context)))))
-                        (bridge/refuse context (find-refusal-reason not-found person-id) nil)
+                                                                             (rows-of/find-marked-ids marks (:groundwork-steps/message-data context)))))
+                        (steps/refuse context (find-refusal-reason not-found person-id) nil)
                         context)))))}))
 
 (defn- does-action-only-read?
@@ -309,12 +309,12 @@
 
 (defn- make-run-steps-in [{:keys [pool find-session-step scope-kinds] :as setup} {:keys [action]}]
   (fn [run context]
-    (let [context (bridge/run-steps-until-answered [find-session-step] context)]
-      (if (bridge/does-context-have-answer? context)
+    (let [context (steps/run-steps-until-answered [find-session-step] context)]
+      (if (steps/does-context-have-answer? context)
         context
         ;; the message's log, with its request id (and the person, once found): a
         ;; step's after-commit work that fails is written there
-        (postgres/run-in-transaction! pool {:read-only? (does-action-only-read? setup action) :log (:groundwork-bridge/log context)}
+        (postgres/run-in-transaction! pool {:read-only? (does-action-only-read? setup action) :log (:groundwork-steps/log context)}
                                     (fn [transaction]
                                       (let [{:groundwork-access/keys [person-id visitor-id session-flags]} context
                                             ;; the check reads with every action; it then tells only the handler's

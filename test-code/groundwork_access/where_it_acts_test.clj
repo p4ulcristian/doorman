@@ -9,14 +9,14 @@
   (:require
    [clojure.string :as str]
    [clojure.test :refer [deftest is testing]]
-   [groundwork-access.test-answers :refer [refusal refusal-json read-without-request-ids without-request-id]]
+   [groundwork-access.test-answers :refer [answer-message make-answerer refusal refusal-json read-without-request-ids without-request-id]]
    [groundwork-postgres.api :as postgres]
    [groundwork-access.api :as access]
    [groundwork-access.test-roles :refer [add-member!]]
    [groundwork-access.test-log :refer [log]]
    [groundwork-access.test-settings :as test-settings]
    [groundwork-access.test-shaper :refer [shaper]]
-   [groundwork-bridge.api :as bridge]))
+   [groundwork-steps.api :as steps]))
 
 (def ^:private port test-settings/port)
 
@@ -108,7 +108,7 @@
 
 (defn- query [text] (postgres/make-query-from-sql-text "a test statement" text))
 
-(defn- answer-with [f] {:name :answer :enter #(bridge/add-answer-to-context % (f (:groundwork-access/transaction %) (:groundwork-bridge/message-data %)))})
+(defn- answer-with [f] {:name :answer :enter #(steps/add-answer-to-context % (f (:groundwork-access/transaction %) (:groundwork-steps/message-data %)))})
 
 (def ^:private insert-machine (query "INSERT INTO machines (machine__shop_id) VALUES (:machine/shop-id)"))
 
@@ -233,7 +233,7 @@
                                                                                             {:settings settings :tables [] :session-flags #{}}))
                                                              #";"))}})
             ask      (fn [person handler-name params]
-                       (without-request-id (get (bridge/answer-message ready :no-rate-limits (request person) {handler-name params} {:shaper shaper :log log :meter (test-settings/make-meter) :metric-buckets test-settings/metric-buckets})
+                       (without-request-id (get (answer-message ready (request person) {handler-name params} {:shaper shaper :log log})
                                                 handler-name)))
             machines-in #(count-rows owner-pool (str "SELECT 1 AS row__found FROM machines WHERE machine__shop_id = '" % "'"))]
         (try
@@ -244,7 +244,7 @@
             (is (= [1 0] [(machines-in shop-a) (machines-in shop-b)])))
 
           (testing "a handler that names A but inserts a row in B is refused by the gate"
-            (is (= (refusal :groundwork-bridge/failed) (ask anna :machines/misplace {:shop/id shop-a :machine/shop-id shop-b})))
+            (is (= (refusal :groundwork-steps/failed) (ask anna :machines/misplace {:shop/id shop-a :machine/shop-id shop-b})))
             (is (= 0 (machines-in shop-b)) "Postgres heard :machines/edit in A only, not her Employee action in B")
             (is (= {} (ask anna :machines/misplace {:shop/id shop-a :machine/shop-id shop-a}))))
 
@@ -269,7 +269,7 @@
               (is (= {:count 1} (work "read-workstations")) "workstations read")
               (is (= {:count 0} (work "update-workstation")) "and only read")
               (is (= #{"oven" "booth"} (set (map :workstation/name (postgres/find-rows owner-pool (query "SELECT workstation__name FROM workstations") {}))))))
-            (is (= (refusal :groundwork-bridge/failed) (ask bob :orders/work {:order/id order-a :target/shop-id shop-b :work "insert-ledger"}))
+            (is (= (refusal :groundwork-steps/failed) (ask bob :orders/work {:order/id order-a :target/shop-id shop-b :work "insert-ledger"}))
                 "a ledger row in shop B, from shop A's order: refused by the gate")
             (is (= (refusal :groundwork-access/not-found) (ask bob :orders/work {:order/id order-b :target/shop-id shop-b :work "insert-ledger"}))
                 "shop B's order: refused by the check")
@@ -306,7 +306,7 @@
                   "her Employee role in B gives another action")))
 
           (testing "the leak test asks a :scope handler in each foreign scope"
-            (let [options {:shaper shaper :log log :meter (test-settings/make-meter) :metric-buckets test-settings/metric-buckets :scope-kinds scope-kinds :seed 7 :size 10}]
+            (let [options {:answer-message (make-answerer shaper log) :scope-kinds scope-kinds :seed 7 :size 10}]
               (is (= [] (access/find-leaks (select-keys ready [:machines/create]) (request anna) {:shops [shop-b]} options)))
               (let [unchecked (update-in ready [:machines/create :steps] #(vec (remove (comp #{:groundwork-access/check} :name) %)))]
                 (is (= [{:handler :machines/create :asked-in [:shop shop-b] :answer {}}]

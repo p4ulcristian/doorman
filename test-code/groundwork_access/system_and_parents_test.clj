@@ -7,7 +7,7 @@
   (:require
    [clojure.string :as str]
    [clojure.test :refer [deftest is testing]]
-   [groundwork-access.test-answers :refer [refusal refusal-json read-without-request-ids without-request-id]]
+   [groundwork-access.test-answers :refer [answer-message make-answerer refusal refusal-json read-without-request-ids without-request-id]]
    [groundwork-postgres.api :as postgres]
    [groundwork-access.api :as access]
    [groundwork-access.test-roles :refer [add-member!]]
@@ -15,7 +15,7 @@
    [groundwork-access.test-log :refer [log]]
    [groundwork-access.test-settings :as test-settings]
    [groundwork-access.test-shaper :refer [shaper]]
-   [groundwork-bridge.api :as bridge]))
+   [groundwork-steps.api :as steps]))
 
 (def ^:private port test-settings/port)
 
@@ -252,7 +252,7 @@
           (let [ready (access/put-access-into-handlers
                        {:emails/mark {:action :shop-emails/mark-bounced :scope :every-scope-holding-the-action :params-shape [:map] :answer-shape [:map]
                                       :refusals {} :rate-limit nil :run-steps-in nil
-                                      :steps [{:name :answer :enter #(bridge/add-answer-to-context % {})}]}}
+                                      :steps [{:name :answer :enter #(steps/add-answer-to-context % {})}]}}
                        {:pool app-pool :tables tables :scope-kinds scope-kinds
                         :find-session-step (access/make-find-session-step app-pool {:cookie-name "app_session" :session-days 1
                                                                                      :visitor-session-days 1 :renew-after-minutes 60
@@ -266,7 +266,7 @@
                 request {:request-method :post
                          :headers {"origin" "http://app.test" "cookie" (first (str/split set-cookie #";"))}}]
             (is (= (refusal :groundwork-access/not-found)
-                   (without-request-id (:emails/mark (bridge/answer-message ready :no-rate-limits request {:emails/mark {}} {:shaper shaper :log log :meter (test-settings/make-meter) :metric-buckets test-settings/metric-buckets})))))))))))
+                   (without-request-id (:emails/mark (answer-message ready request {:emails/mark {}} {:shaper shaper :log log})))))))))))
 
 (deftest a-record-under-a-record-carries-its-parents-columns
   (if-not port
@@ -300,7 +300,7 @@
                   ready    (access/put-access-into-handlers
                             {:jobs/one {:action :jobs/see :record [:jobs :job/id] :params-shape [:map [:job/id :uuid]]
                                         :answer-shape [:map [:job/id :uuid]] :refusals {} :rate-limit nil :run-steps-in nil
-                                        :steps [{:name :answer :enter #(bridge/add-answer-to-context % (select-keys (:groundwork-bridge/message-data %) [:job/id]))}]}}
+                                        :steps [{:name :answer :enter #(steps/add-answer-to-context % (select-keys (:groundwork-steps/message-data %) [:job/id]))}]}}
                             {:pool app-pool :tables tables :scope-kinds scope-kinds
                              :find-session-step (access/make-find-session-step app-pool settings)})
                   request  (fn [person]
@@ -310,9 +310,9 @@
                                                                                                   {:settings settings :tables [] :session-flags #{}}))
                                                                    #";"))}})
                   job-id   (:job/id (job))]
-              (is (= (refusal :groundwork-access/not-found) (without-request-id (:jobs/one (bridge/answer-message ready :no-rate-limits (request anna) {:jobs/one {:job/id job-id}}
-                                                                                                           {:shaper shaper :log log :meter (test-settings/make-meter) :metric-buckets test-settings/metric-buckets})))))
-              (is (= {:job/id (str job-id)} (:jobs/one (bridge/answer-message ready :no-rate-limits (request mia) {:jobs/one {:job/id job-id}}
-                                                                          {:shaper shaper :log log :meter (test-settings/make-meter) :metric-buckets test-settings/metric-buckets})))
+              (is (= (refusal :groundwork-access/not-found) (without-request-id (:jobs/one (answer-message ready (request anna) {:jobs/one {:job/id job-id}}
+                                                                                                           {:shaper shaper :log log})))))
+              (is (= {:job/id (str job-id)} (:jobs/one (answer-message ready (request mia) {:jobs/one {:job/id job-id}}
+                                                                          {:shaper shaper :log log})))
                   "Mia, in shop 9 too, still does")
-              (is (= [] (access/find-leaks ready (request anna) {:jobs [job-id]} {:shaper shaper :log log :meter (test-settings/make-meter) :metric-buckets test-settings/metric-buckets :scope-kinds scope-kinds :seed 7 :size 10}))))))))))
+              (is (= [] (access/find-leaks ready (request anna) {:jobs [job-id]} {:answer-message (make-answerer shaper log) :scope-kinds scope-kinds :seed 7 :size 10}))))))))))

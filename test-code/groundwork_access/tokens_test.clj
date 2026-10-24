@@ -7,7 +7,7 @@
   (:require
    [clojure.string :as str]
    [clojure.test :refer [deftest is testing]]
-   [groundwork-access.test-answers :refer [refusal refusal-json read-without-request-ids without-request-id]]
+   [groundwork-access.test-answers :refer [answer-message make-answerer refusal refusal-json read-without-request-ids without-request-id]]
    [groundwork-postgres.api :as postgres]
    [groundwork-access.api :as access]
    [groundwork-access.test-roles :refer [add-member!]]
@@ -15,7 +15,7 @@
    [groundwork-access.test-log :as test-log :refer [log]]
    [groundwork-access.test-settings :as test-settings]
    [groundwork-access.test-shaper :refer [shaper]]
-   [groundwork-bridge.api :as bridge])
+   [groundwork-steps.api :as steps])
   (:import
    (java.time Duration Instant)))
 
@@ -55,7 +55,7 @@
 
 (defn- query [text] (postgres/make-query-from-sql-text "a test statement" text))
 
-(defn- answer-with [f] {:name :answer :enter #(bridge/add-answer-to-context % (f (:groundwork-access/transaction %) (:groundwork-bridge/message-data %)))})
+(defn- answer-with [f] {:name :answer :enter #(steps/add-answer-to-context % (f (:groundwork-access/transaction %) (:groundwork-steps/message-data %)))})
 
 (def ^:private insert-order (query "INSERT INTO orders (order__shop_id) VALUES (:order/shop-id)"))
 
@@ -137,11 +137,11 @@
             bearer     (fn [text] {:request-method :post :headers {"authorization" (str "Bearer " text)}})
             make!      (fn [request name days] (access/make-token! app-pool request {:settings settings :name name :ends-at (in-days days)}))
             ask        (fn [request handler-name params]
-                         (without-request-id (get (bridge/answer-message ready :no-rate-limits request {handler-name params} {:shaper shaper :log log :meter (test-settings/make-meter) :metric-buckets test-settings/metric-buckets})
+                         (without-request-id (get (answer-message ready request {handler-name params} {:shaper shaper :log log})
                                                   handler-name)))
             asker-of   (fn [request]
-                         (let [context (bridge/run-steps-until-answered [step] {:groundwork-bridge/request request :groundwork-bridge/log log})]
-                           (or (:groundwork-bridge/answer context)
+                         (let [context (steps/run-steps-until-answered [step] {:groundwork-steps/request request :groundwork-steps/log log})]
+                           (or (:groundwork-steps/answer context)
                                ((juxt :groundwork-access/person-id :groundwork-access/visitor-id :groundwork-access/session-flags) context))))
             orders-in  #(count-rows owner-pool (str "SELECT 1 AS row__found FROM orders WHERE order__shop_id = '" % "'"))
             anna-token (make! (browser anna) "catalog script" 30)]
@@ -160,8 +160,8 @@
             (is (= [anna nil #{}] (asker-of (assoc-in (bearer (:text anna-token)) [:headers "origin"] "https://evil.test")))
                 "a browser never sends the header on its own, so another site's Origin doesn't matter")
             (reset! test-log/lines [])
-            (let [context (bridge/run-steps-until-answered [step] {:groundwork-bridge/request (bearer (:text anna-token)) :groundwork-bridge/log log})]
-              ((:groundwork-bridge/log context) :info :test/later-step {}))
+            (let [context (steps/run-steps-until-answered [step] {:groundwork-steps/request (bearer (:text anna-token)) :groundwork-steps/log log})]
+              ((:groundwork-steps/log context) :info :test/later-step {}))
             (is (= [{"person-id" (str anna) "token-id" (str (:token-id anna-token))}] (mapv #(get % "context") @test-log/lines))
                 "the lines say who asked, and by which token"))
 
@@ -177,7 +177,7 @@
           (testing "held by the same check and gates as her browser's calls"
             (is (= {} (ask (bearer (:text anna-token)) :orders/place {:order/shop-id shop-a})) "in A, where she is Staff")
             (is (= (refusal :groundwork-access/not-found) (ask (bearer (:text anna-token)) :orders/place {:order/shop-id shop-b})) "in B: the check")
-            (is (= (refusal :groundwork-bridge/failed) (ask (bearer (:text anna-token)) :orders/misplace {:shop/id shop-a :order/shop-id shop-b}))
+            (is (= (refusal :groundwork-steps/failed) (ask (bearer (:text anna-token)) :orders/misplace {:shop/id shop-a :order/shop-id shop-b}))
                 "a handler acting in A that writes into B: the gate")
             (is (= [1 0] [(orders-in shop-a) (orders-in shop-b)]))
             (run-sql! owner-pool (str "INSERT INTO orders (order__shop_id) VALUES ('" shop-b "')"))

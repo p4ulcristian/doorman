@@ -5,7 +5,7 @@
   (:require
    [clojure.string :as str]
    [clojure.test :refer [deftest is testing]]
-   [groundwork-access.test-answers :refer [refusal refusal-json read-without-request-ids without-request-id]]
+   [groundwork-access.test-answers :refer [answer-message refusal refusal-json read-without-request-ids without-request-id]]
    [groundwork-postgres.api :as postgres]
    [groundwork-access.api :as access]
    [groundwork-access.test-roles :refer [add-member!]]
@@ -13,7 +13,7 @@
    [groundwork-access.test-log :refer [log]]
    [groundwork-access.test-settings :as test-settings]
    [groundwork-access.test-shaper :refer [shaper]]
-   [groundwork-bridge.api :as bridge]
+   [groundwork-steps.api :as steps]
    [groundwork-shaped-json.api :as shaped-json-api]))
 
 (def ^:private port (some-> (System/getenv "ACCESS_TEST_PORT") parse-long))
@@ -87,7 +87,7 @@
     (is (= :groundwork-access/bad-options (:type errors)))
     (is (= #{:rate-limit} (set (keys (:errors errors)))) "nil written out for no rate limit")))
 
-(deftest the-handler-writes-out-bridge-s-keys
+(deftest the-handler-writes-out-its-runner-s-keys
   (let [handler (access/make-my-actions-handler {:pool (Object.) :tables tables :scope-kinds scope-kinds
                                                   :find-session-step no-session-step :rate-limit {:max 60 :per-ms 60000}})]
     (is (= #{:params-shape :answer-shape :refusals :rate-limit :run-steps-in :steps} (set (keys handler))))
@@ -102,14 +102,14 @@
    shape), back into shaped data by the same shape."
   [handlers cookie origin]
   (let [answer (:groundwork-access/my-actions
-                (bridge/answer-message handlers :no-rate-limits
-                                         {:request-method :post
-                                          :headers        (cond-> {}
-                                                            origin (assoc "origin" origin)
-                                                            cookie (assoc "cookie" cookie))}
-                                         {:groundwork-access/my-actions {}}
-                                         {:shaper shaper :log log :meter (test-settings/make-meter) :metric-buckets test-settings/metric-buckets}))]
-    (if (bridge/is-error-answer? answer)
+                (answer-message handlers
+                                {:request-method :post
+                                 :headers        (cond-> {}
+                                                   origin (assoc "origin" origin)
+                                                   cookie (assoc "cookie" cookie))}
+                                {:groundwork-access/my-actions {}}
+                                {:shaper shaper :log log}))]
+    (if (steps/is-error-answer? answer)
       (without-request-id answer)
       (:shaped-data (shaped-json-api/turn-json-data-into-shaped-data-or-errors shaper access/my-actions-answer-shape answer)))))
 

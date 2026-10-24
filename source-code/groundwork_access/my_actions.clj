@@ -35,7 +35,7 @@
    [groundwork-access.scope-kinds :as scope-kinds]
    [groundwork-access.shapes :as shapes]
    [groundwork-access.sentences :as sentences]
-   [groundwork-bridge.api :as bridge]))
+   [groundwork-steps.api :as steps]))
 
 (def answer-shape
   "The answer, groundwork-access.shapes's, the same on both sides."
@@ -147,17 +147,17 @@
                                                                         action)))
                     denied   (for [deny state-denies] [deny (find-denied-scopes transaction deny)])
                     [by-scope open-now] (take-out-denied by-scope open-now scope-kinds session-flags denied)]
-                (bridge/add-answer-to-context context (make-answer by-scope open-now))))}))
+                (steps/add-answer-to-context context (make-answer by-scope open-now))))}))
 
 (defn- make-run-steps-in
   "The session step, then the steps in one read-only transaction at
    :groundwork-access/transaction."
   [{:keys [pool find-session-step]}]
   (fn [run context]
-    (let [context (bridge/run-steps-until-answered [find-session-step] context)]
-      (if (bridge/does-context-have-answer? context)
+    (let [context (steps/run-steps-until-answered [find-session-step] context)]
+      (if (steps/does-context-have-answer? context)
         context
-        (postgres/run-in-transaction! pool {:read-only? true :log (:groundwork-bridge/log context)}
+        (postgres/run-in-transaction! pool {:read-only? true :log (:groundwork-steps/log context)}
                                     (fn [transaction]
                                       (run (assoc context :groundwork-access/transaction transaction))))))))
 

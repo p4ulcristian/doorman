@@ -10,7 +10,7 @@
   (:require
    [clojure.string :as str]
    [clojure.test :refer [deftest is testing]]
-   [groundwork-access.test-answers :refer [refusal refusal-json read-without-request-ids without-request-id]]
+   [groundwork-access.test-answers :refer [answer-message make-answerer refusal refusal-json read-without-request-ids without-request-id]]
    [groundwork-postgres.api :as postgres]
    [groundwork-access.api :as access]
    [groundwork-access.test-roles :refer [add-member!]]
@@ -18,7 +18,7 @@
    [groundwork-access.test-log :refer [log]]
    [groundwork-access.test-settings :as test-settings]
    [groundwork-access.test-shaper :refer [shaper]]
-   [groundwork-bridge.api :as bridge]
+   [groundwork-steps.api :as steps]
    [groundwork-shaped-json.api :as shaped-json-api]))
 
 (def ^:private port (some-> (System/getenv "ACCESS_TEST_PORT") parse-long))
@@ -148,24 +148,24 @@
 (def ^:private update-status (postgres/make-query-from-sql-text "an order's status" "UPDATE orders SET order__status = 'seen' WHERE order__id = :order/id"))
 (def ^:private insert-order (postgres/make-query-from-sql-text "a new order" "INSERT INTO orders (order__shop_id, order__status) VALUES (:order/shop-id, 'new')"))
 
-(defn- answer-with [f] {:name :answer :enter #(bridge/add-answer-to-context % (f %))})
+(defn- answer-with [f] {:name :answer :enter #(steps/add-answer-to-context % (f %))})
 
 (def ^:private handlers
   {:orders/one    {:action :orders/see :record [:orders :order/id] :params-shape [:map [:order/id :uuid]]
                    :answer-shape [:map [:order/id :uuid]] :refusals {} :rate-limit nil :run-steps-in nil
-                   :steps [(answer-with #(select-keys (:groundwork-bridge/message-data %) [:order/id]))]}
+                   :steps [(answer-with #(select-keys (:groundwork-steps/message-data %) [:order/id]))]}
    :orders/edit   {:action :orders/edit :record [:orders :order/id] :params-shape [:map [:order/id :uuid]]
                    :answer-shape [:map [:order/id :uuid]] :refusals {} :rate-limit nil :run-steps-in nil
-                   :steps [(answer-with #(do (postgres/run-statement! (:groundwork-access/transaction %) update-status (:groundwork-bridge/message-data %))
-                                             (select-keys (:groundwork-bridge/message-data %) [:order/id])))]}
+                   :steps [(answer-with #(do (postgres/run-statement! (:groundwork-access/transaction %) update-status (:groundwork-steps/message-data %))
+                                             (select-keys (:groundwork-steps/message-data %) [:order/id])))]}
    :orders/note   {:action :orders/note :record [:orders :order/id] :params-shape [:map [:order/id :uuid]]
                    :answer-shape [:map [:order/id :uuid]] :refusals {} :rate-limit nil :run-steps-in nil
-                   :steps [(answer-with #(select-keys (:groundwork-bridge/message-data %) [:order/id]))]}
+                   :steps [(answer-with #(select-keys (:groundwork-steps/message-data %) [:order/id]))]}
    :orders/all    {:action :orders/see :scope :every-scope-holding-the-action :params-shape [:map] :answer-shape [:vector :uuid] :refusals {} :rate-limit nil :run-steps-in nil
                    :steps [(answer-with #(mapv :order/id (postgres/find-rows (:groundwork-access/transaction %) find-all-orders {})))]}
    :orders/place  {:action :orders/edit :scope [:shop :order/shop-id] :params-shape [:map [:order/shop-id :uuid]] :answer-shape [:map] :refusals {} :rate-limit nil
                    :run-steps-in nil
-                   :steps [(answer-with #(do (postgres/run-statement! (:groundwork-access/transaction %) insert-order (:groundwork-bridge/message-data %)) {}))]}})
+                   :steps [(answer-with #(do (postgres/run-statement! (:groundwork-access/transaction %) insert-order (:groundwork-steps/message-data %)) {}))]}})
 
 ;; -----------------------------------------------------------------------------
 ;; Helpers
@@ -223,7 +223,7 @@
 (defn- ask
   "A message's answer as over http (JSON data), by the app's shaper."
   [ready cookie handler-name params]
-  (without-request-id (get (bridge/answer-message ready :no-rate-limits (request-of cookie) {handler-name params} {:shaper shaper :log log :meter (test-settings/make-meter) :metric-buckets test-settings/metric-buckets})
+  (without-request-id (get (answer-message ready (request-of cookie) {handler-name params} {:shaper shaper :log log})
                            handler-name)))
 
 (defn- texts [answer] (set (map str (filter #(or (uuid? %) (string? %)) (tree-seq coll? seq answer)))))
@@ -465,7 +465,7 @@
                      (set (map :way (:sentences answer)))))))
 
           (testing "the leak test, for each asker, with the rows they must not reach"
-            (let [leaks #(access/find-leaks ready (request-of %1) {:orders %2} {:shaper shaper :log log :meter (test-settings/make-meter) :metric-buckets test-settings/metric-buckets :scope-kinds scope-kinds :seed 7 :size 30})]
+            (let [leaks #(access/find-leaks ready (request-of %1) {:orders %2} {:answer-message (make-answerer shaper log) :scope-kinds scope-kinds :seed 7 :size 30})]
               (is (= [] (leaks (sign-in anna #{}) [order-80 order-99 order-c order-v])) "Staff of shop 7")
               (is (= [] (leaks (sign-in dora #{}) [order-80 order-99 order-v])) "the Director")
               (is (= [] (leaks (sign-in pia #{}) [order-80 order-99 order-c])) "the partner, through the via")
@@ -477,8 +477,8 @@
             (is (= #{} (orders-seen-by app-pool {:visitor-id v1})) "the visitor has nothing left")
             (is (= #{order-v} (orders-seen-by app-pool {:person-id vic})) "the person has it")
             (is (= #{order-w} (orders-seen-by app-pool {:visitor-id v2})) "another visitor's rows stay")
-            (is (nil? (:groundwork-access/visitor-id (bridge/run-steps-until-answered [find-step] {:groundwork-bridge/request (request-of v1-cookie)
-                                                                                           :groundwork-bridge/log log})))
+            (is (nil? (:groundwork-access/visitor-id (steps/run-steps-until-answered [find-step] {:groundwork-steps/request (request-of v1-cookie)
+                                                                                           :groundwork-steps/log log})))
                 "the visitor's cookie finds nobody"))
           (finally
             (postgres/stop-pool! app-pool)

@@ -13,11 +13,11 @@
    asked once: its answer must hold none of the foreign ids. The other params come from the
    handler's :params-shape, by malli's generator, with the options' :seed
    (the same params every run) and :size (how big the made-up values get).
-   Each message is answered by bridge's answer-message, by the options'
-   :shaper, :log, :meter and :metric-buckets: counted on the meter as over
-   http."
+   Each message is answered by the options' :answer-message, (fn [handlers
+   request message]) -> the answer keyed by name: the runner the app plugs
+   its handlers into (groundwork's: groundwork-bridge's answer-message, as
+   over http). groundwork-access runs no message itself."
   (:require
-   [groundwork-bridge.api :as bridge]
    [malli.generator :as generator]))
 
 (defn- generate-params [{:keys [params-shape]} {:keys [seed size]}]
@@ -29,16 +29,14 @@
   [data]
   (set (map str (filter #(or (uuid? %) (string? %)) (tree-seq coll? seq data)))))
 
-(defn- ask [handlers request handler-name params options]
-  (get (bridge/answer-message handlers :no-rate-limits request {handler-name params}
-                              (select-keys options [:shaper :log :meter :metric-buckets]))
-       handler-name))
+(defn- ask [handlers request handler-name params {:keys [answer-message]}]
+  (get (answer-message handlers request {handler-name params}) handler-name))
 
 (defn- is-not-found?
   "Refused with a reason that tells nothing of the record: :groundwork-access/not-found,
    or :groundwork-access/signed-out, which a signed-out asker gets for any record."
   [answer]
-  (contains? #{:groundwork-access/not-found :groundwork-access/signed-out} (:groundwork-bridge/refused answer)))
+  (contains? #{:groundwork-access/not-found :groundwork-access/signed-out} (:groundwork-steps/refused answer)))
 
 (defn- check-record-handler [handlers request [handler-name {[table-key id-key] :record :as handler}] foreign-ids options]
   (for [id (get foreign-ids table-key)

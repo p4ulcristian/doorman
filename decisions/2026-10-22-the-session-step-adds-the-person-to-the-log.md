@@ -1,5 +1,7 @@
 # The session step adds the person to the message's log; the leak test takes the app's log
 
+> **Changed in part by** [groundwork-access requires groundwork-steps, not groundwork-bridge](2026-10-24-groundwork-access-requires-groundwork-steps-not-groundwork-bridge.md) (2026-10-24): the message's log is `:groundwork-steps/log`; the leak test takes no log any more, the app's runner (`:answer-message`) carries it.
+
 > Changes in part [sessions v1](2026-10-22-sessions-v1.md) (what the find-session step adds) and [The app passes its wire](2026-10-22-the-app-passes-its-wire.md) (`find-leaks`'s options). Since v0.3.0, on mailroom v0.3.0, cellar v0.2.0 and logbook v0.1.0.
 
 **Decision:** doorman writes no line of its own and decides nothing about how one is written. Two places take the app's log:

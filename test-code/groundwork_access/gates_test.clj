@@ -6,17 +6,14 @@
   (:require
    [clojure.string :as str]
    [clojure.test :refer [deftest is testing]]
-   [groundwork-access.test-answers :refer [refusal refusal-json read-without-request-ids without-request-id]]
+   [groundwork-access.test-answers :refer [answer-json-text answer-message make-answerer refusal refusal-json read-without-request-ids without-request-id]]
    [groundwork-access.api :as access]
    [groundwork-access.test-roles :refer [add-member!]]
    [groundwork-access.test-settings :as test-settings]
    [groundwork-postgres.api :as postgres]
    [groundwork-access.test-log :refer [log]]
    [groundwork-access.test-shaper :refer [shaper]]
-   [groundwork-bridge.api :as bridge])
-  (:import
-   (java.net URI)
-   (java.net.http HttpClient HttpRequest HttpRequest$BodyPublishers HttpResponse$BodyHandlers)))
+   [groundwork-steps.api :as steps]))
 
 (def ^:private port (some-> (System/getenv "ACCESS_TEST_PORT") parse-long))
 
@@ -68,20 +65,20 @@
   {:orders/all   {:action :orders/see :scope :every-scope-holding-the-action :params-shape [:map] :answer-shape [:vector :uuid]
                   :refusals {} :rate-limit nil :run-steps-in nil
                   :steps  [{:name  :answer-all-orders
-                            :enter #(bridge/add-answer-to-context
+                            :enter #(steps/add-answer-to-context
                                      % (mapv :order/id (postgres/find-rows (:groundwork-access/transaction %) find-all-orders {})))}]}
    :orders/sneak {:action :orders/see :scope [:shop :order/shop-id] :params-shape [:map [:order/shop-id :uuid]] :answer-shape [:map]
                   :refusals {} :rate-limit nil :run-steps-in nil
                   :steps  [{:name  :insert-order-while-only-seeing
                             :enter #(do (postgres/run-statement! (:groundwork-access/transaction %) insert-order
-                                                                 (:groundwork-bridge/message-data %))
-                                        (bridge/add-answer-to-context % {}))}]}
+                                                                 (:groundwork-steps/message-data %))
+                                        (steps/add-answer-to-context % {}))}]}
    :orders/place {:action :orders/edit :scope [:shop :order/shop-id] :params-shape [:map [:order/shop-id :uuid]] :answer-shape [:map]
                   :refusals {} :rate-limit nil :run-steps-in nil
                   :steps  [{:name  :insert-order
                             :enter #(do (postgres/run-statement! (:groundwork-access/transaction %) insert-order
-                                                            (:groundwork-bridge/message-data %))
-                                        (bridge/add-answer-to-context % {}))}]}})
+                                                            (:groundwork-steps/message-data %))
+                                        (steps/add-answer-to-context % {}))}]}})
 
 (defn- run-sql! [pool text] (postgres/run-statement! pool (postgres/make-query-from-sql-text "test" text) {}))
 
@@ -103,32 +100,14 @@
 (defn- start-pool! [user]
   (test-settings/start-pool! user 4))
 
-(defn- ask [port cookie message-text]
-  (.body (.send (HttpClient/newHttpClient)
-                (cond-> (HttpRequest/newBuilder (URI. (str "http://localhost:" port "/mail/http")))
-                  true   (.header "origin" "http://app.test")
-                  cookie (.header "cookie" cookie)
-                  true   (-> (.POST (HttpRequest$BodyPublishers/ofString message-text)) (.build)))
-                (HttpResponse$BodyHandlers/ofString))))
+(defn- ask
+  "A message's JSON text, from the app's pages (its Origin) with the
+   cookie, answered as JSON text, as over http."
+  [ready cookie message-text]
+  (answer-json-text ready {:request-method :post
+                           :headers        (cond-> {"origin" "http://app.test"} cookie (assoc "cookie" cookie))}
+                    message-text {:shaper shaper :log log}))
 
-(def ^:private server-settings
-  "bridge's settings: three addresses, no proxy in front."
-  {:ip "127.0.0.1" :port 0 :proxy-protocol :disable :client-address-header nil :server-header nil
-   :max-body-bytes 8388608 :max-request-head-bytes 8192 :max-ws-message-bytes 4194304
-   :idle-timeout-ms 60000 :threads {:min 8 :max 50 :idle-timeout-ms 60000}
-   :addresses {:http "/mail/http" :sse "/mail/sse" :ws "/mail/ws"}
-   :ping-every-ms 25000 :sse-reconnect-after-ms 3000 :ws-reopen-after-ms 1000
-   :stop-wait-ms 10000 :stop-wait-after-cut-ms 1000
-   :rate-limit-buckets-before-cleanup 10000
-   :metric-buckets {:answer-seconds [0.01 0.1 1]}})
-
-(def ^:private server-options
-  "bridge's options: askers by address, no hooks; a new meter is added
-   where the routes are made."
-  {:shaper                shaper
-   :log                 log
-   :find-rate-limit-key #(bridge/find-client-address % nil)
-   :on-sse-open nil :on-sse-close nil :on-ws-open nil :on-ws-close nil})
 
 (deftest a-table-that-names-a-scope-needs-access
   (is (thrown-with-msg? clojure.lang.ExceptionInfo #"names a scope but has no :access"
@@ -142,16 +121,14 @@
       (let [app-pool (start-pool! "groundwork_access_app")
             ready    (access/put-access-into-handlers handlers {:pool app-pool :tables [shops orders] :scope-kinds scope-kinds
                                                                 :find-session-step (access/make-find-session-step app-pool settings)})
-            server   (bridge/start-server! (get-in (first (bridge/make-routes-for-messages ready server-settings (assoc server-options :meter (test-settings/make-meter)))) [1 :post :handler])
-                                              server-settings {:log log})
             cookie   #(first (str/split (:set-cookie (access/sign-in! app-pool {:headers {}} % {:settings settings :tables [] :session-flags #{}})) #";"))]
         (try
           (testing "the app's own role, which owns nothing, signs in and out, and the functions answer it"
             (let [request {:request-method :post :headers {"origin" "http://app.test" "cookie" (cookie anna)}}
                   step    (access/make-find-session-step app-pool settings)]
-              (is (= anna (:groundwork-access/person-id (bridge/run-steps-until-answered [step] {:groundwork-bridge/request request :groundwork-bridge/log log}))))
+              (is (= anna (:groundwork-access/person-id (steps/run-steps-until-answered [step] {:groundwork-steps/request request :groundwork-steps/log log}))))
               (access/sign-out! app-pool request settings)
-              (is (nil? (:groundwork-access/person-id (bridge/run-steps-until-answered [step] {:groundwork-bridge/request request :groundwork-bridge/log log}))))
+              (is (nil? (:groundwork-access/person-id (steps/run-steps-until-answered [step] {:groundwork-steps/request request :groundwork-steps/log log}))))
               (is (= {:asking/nobody true :asking/no-scopes true}
                      (postgres/find-one-row app-pool (postgres/make-query-from-sql-text
                                                     "the functions, as the app's role"
@@ -163,19 +140,19 @@
               (cookie bob)
               (is (= {:sessions 2 :tokens 0} (access/sign-out-everywhere! app-pool bob)))))
           (testing "a query with no WHERE: Postgres returns only the asker's rows"
-            (is (= (str "{\"orders/all\":[\"" order-42 "\"]}") (ask (:port server) (cookie anna) "{\"orders/all\":{}}")))
-            (is (= (str "{\"orders/all\":[\"" order-99 "\"]}") (ask (:port server) (cookie bob) "{\"orders/all\":{}}")))
-            (is (= (refusal-json "orders/all" :groundwork-access/signed-out) (read-without-request-ids (ask (:port server) nil "{\"orders/all\":{}}")))
+            (is (= (str "{\"orders/all\":[\"" order-42 "\"]}") (ask ready (cookie anna) "{\"orders/all\":{}}")))
+            (is (= (str "{\"orders/all\":[\"" order-99 "\"]}") (ask ready (cookie bob) "{\"orders/all\":{}}")))
+            (is (= (refusal-json "orders/all" :groundwork-access/signed-out) (read-without-request-ids (ask ready nil "{\"orders/all\":{}}")))
                 "nobody signed in can hold orders/see: the list doesn't run at all"))
           (testing "a new row in another shop is refused by the check: the handler acts in the shop it names"
             (is (= (refusal-json "orders/place" :groundwork-access/not-found)
-                   (read-without-request-ids (ask (:port server) (cookie anna) (str "{\"orders/place\":{\"order/shop-id\":\"" shop-9 "\"}}")))))
+                   (read-without-request-ids (ask ready (cookie anna) (str "{\"orders/place\":{\"order/shop-id\":\"" shop-9 "\"}}")))))
             (is (= "{\"orders/place\":{}}"
-                   (ask (:port server) (cookie anna) (str "{\"orders/place\":{\"order/shop-id\":\"" shop-7 "\"}}")))
+                   (ask ready (cookie anna) (str "{\"orders/place\":{\"order/shop-id\":\"" shop-7 "\"}}")))
                 "in her own shop: fine"))
           (testing "an action that only reads runs read-only: a write in its steps is refused"
-            (is (= (refusal-json "orders/sneak" :groundwork-bridge/failed)
-                   (read-without-request-ids (ask (:port server) (cookie anna) (str "{\"orders/sneak\":{\"order/shop-id\":\"" shop-7 "\"}}"))))
+            (is (= (refusal-json "orders/sneak" :groundwork-steps/failed)
+                   (read-without-request-ids (ask ready (cookie anna) (str "{\"orders/sneak\":{\"order/shop-id\":\"" shop-7 "\"}}"))))
                 "Anna may edit shop 7's orders, but orders/see only reads"))
           (testing "run-as-asker-of-request!: a transaction as the request's asker, outside a message, held by the same gates"
             (let [as (fn [request read-only? f]
@@ -199,18 +176,17 @@
           (testing "the leak test: Anna, asked for shop 9's order, gets nothing of it"
             (let [anna-request {:request-method :post
                                 :headers {"origin" "http://app.test" "cookie" (cookie anna)}}]
-              (is (= [] (access/find-leaks (select-keys ready [:orders/all]) anna-request {:orders [order-99]} {:shaper shaper :log log :meter (test-settings/make-meter) :metric-buckets test-settings/metric-buckets :scope-kinds scope-kinds :seed 7 :size 30})))
+              (is (= [] (access/find-leaks (select-keys ready [:orders/all]) anna-request {:orders [order-99]} {:answer-message (make-answerer shaper log) :scope-kinds scope-kinds :seed 7 :size 30})))
               (testing "and a handler that reads past the gates is caught"
                 (let [leaky {:orders/leaky {:action :orders/see :scope :every-scope-holding-the-action :params-shape [:map] :answer-shape [:vector :uuid]
                                             :refusals {} :rate-limit nil :run-steps-in nil
                                             :steps [{:name  :read-with-the-owner
-                                                     :enter #(bridge/add-answer-to-context
+                                                     :enter #(steps/add-answer-to-context
                                                               % (mapv :order/id (postgres/find-rows owner-pool find-all-orders {})))}]}}
                       ready-leaky (access/put-access-into-handlers leaky {:pool app-pool :tables [shops orders] :scope-kinds scope-kinds
                                                                           :find-session-step (access/make-find-session-step app-pool settings)})]
                   (is (= [{:handler :orders/leaky :gave-back [(str order-99)]}]
-                         (access/find-leaks ready-leaky anna-request {:orders [order-99]} {:shaper shaper :log log :meter (test-settings/make-meter) :metric-buckets test-settings/metric-buckets :scope-kinds scope-kinds :seed 7 :size 30})))))))
+                         (access/find-leaks ready-leaky anna-request {:orders [order-99]} {:answer-message (make-answerer shaper log) :scope-kinds scope-kinds :seed 7 :size 30})))))))
           (finally
-            (bridge/stop-server! server)
             (postgres/stop-pool! app-pool)
             (postgres/stop-pool! owner-pool)))))))

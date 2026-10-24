@@ -1,5 +1,7 @@
 # access, piece 5: the leak test
 
+> **Changed in part by** [groundwork-access requires groundwork-steps, not groundwork-bridge](2026-10-24-groundwork-access-requires-groundwork-steps-not-groundwork-bridge.md) (2026-10-24): `find-leaks` asks each message through the app's runner, its `:answer-message` option, not groundwork-bridge's `answer-message` itself.
+
 > **Changed in part** by [A refusal is a named reason, declared on its handler](https://github.com/p4ulcristian/bridge/blob/tidy-up/decisions/2026-10-23-a-refusal-is-a-named-reason-declared-on-its-handler.md) (bridge's, 2026-10-23, built on tidy-up, not released): a record or scope the asker must not reach is refused `:doorman/not-found` (`:doorman/signed-out` for an asker nobody signed in), compared by the reason, not "Not found.".
 
 > **Changed in part** by [A handler says where it acts, and Postgres hears only that](2026-10-23-a-handler-says-where-it-acts-and-postgres-hears-only-that.md) (2026-10-23, built on tidy-up, not released): a `:scope [kind param]` handler is asked with each foreign id of its kind's `:table` and must answer "Not found."; `find-leaks` takes the scope kinds, `:scope-kinds`, required.

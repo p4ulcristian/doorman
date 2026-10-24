@@ -16,7 +16,7 @@
    [groundwork-access.cookie :as cookie]
    [groundwork-access.test-log :as test-log]
    [groundwork-access.test-settings :as test-settings]
-   [groundwork-bridge.api :as bridge]))
+   [groundwork-steps.api :as steps]))
 
 (def ^:private port test-settings/port)
 
@@ -115,7 +115,7 @@
 
 (defn- find-asker [step cookie-value]
   ((juxt :groundwork-access/person-id :groundwork-access/visitor-id :groundwork-access/session-flags)
-   (bridge/run-steps-until-answered [step] {:groundwork-bridge/request (make-request cookie-value) :groundwork-bridge/log test-log/log})))
+   (steps/run-steps-until-answered [step] {:groundwork-steps/request (make-request cookie-value) :groundwork-steps/log test-log/log})))
 
 (defn- write-session-of-v0-6!
   "A person's session as v0.6.x's sign-in! wrote it: the cookie's
@@ -143,7 +143,8 @@
                      "ALTER TABLE groundwork_access.sessions ALTER COLUMN session__person_id DROP NOT NULL"}
                    (set (map :sql (:instant plan)))))
             (is (= 1 (count (:slow plan))))
-            (is (str/starts-with? (:sql (first (:slow plan))) "CREATE INDEX CONCURRENTLY IF NOT EXISTS groundwork_access_scopes_scope__parent_kind_scope__parent_id_idx ON groundwork_access.scopes")))
+            ;; the index name is groundwork-postgres's: over 63 bytes, cut with a hash of the whole
+            (is (str/starts-with? (:sql (first (:slow plan))) "CREATE INDEX CONCURRENTLY IF NOT EXISTS groundwork_access_scopes_scope__parent_kind_scope__par_9d4928b9 ON groundwork_access.scopes")))
           @(:slow-part (postgres/migrate! pool (test-settings/declare-tables (conj today access/tokens-table)) [] test-settings/migrate-options))
           (is (postgres/does-database-match-tables? pool (test-settings/declare-tables (conj today access/tokens-table)) []) "nothing left to do; the tokens' table made by the same plan")
           (testing "every row survives, with no flags and no visitor"

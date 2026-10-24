@@ -8,13 +8,13 @@
   (:require
    [clojure.string :as str]
    [clojure.test :refer [deftest is testing]]
-   [groundwork-access.test-answers :refer [refusal without-request-id]]
+   [groundwork-access.test-answers :refer [answer-message make-answerer refusal without-request-id]]
    [groundwork-postgres.api :as postgres]
    [groundwork-access.api :as access]
    [groundwork-access.test-log :refer [log]]
    [groundwork-access.test-settings :as test-settings]
    [groundwork-access.test-shaper :refer [shaper]]
-   [groundwork-bridge.api :as bridge]
+   [groundwork-steps.api :as steps]
    [groundwork-shaped-json.api :as shaped-json-api]))
 
 (def ^:private port test-settings/port)
@@ -62,14 +62,14 @@
                 :params-shape [:map [:order/id :uuid]] :answer-shape [:map [:count :int]]
                 :refusals {} :rate-limit nil :run-steps-in nil
                 :steps [{:name :approve
-                         :enter #(bridge/add-answer-to-context
+                         :enter #(steps/add-answer-to-context
                                   % {:count (postgres/run-statement! (:groundwork-access/transaction %)
                                                                    (query "UPDATE orders SET order__approved = true WHERE order__id = :order/id")
-                                                                   (:groundwork-bridge/message-data %))})}]}
+                                                                   (:groundwork-steps/message-data %))})}]}
    :qc/in-shop {:action :qc/approve :scope [:shop :shop/id]
                 :params-shape [:map [:shop/id :uuid]] :answer-shape [:map]
                 :refusals {} :rate-limit nil :run-steps-in nil
-                :steps [{:name :answer :enter #(bridge/add-answer-to-context % {})}]}})
+                :steps [{:name :answer :enter #(steps/add-answer-to-context % {})}]}})
 
 (defn- refused-with [f]
   (try (f) nil (catch clojure.lang.ExceptionInfo e (select-keys (ex-data e) [:type :name :held-by]))))
@@ -103,7 +103,7 @@
                                                                                             {:settings settings :tables [] :session-flags #{}}))
                                                              #";"))}})
             ask      (fn [person handler-name params]
-                       (without-request-id (get (bridge/answer-message ready :no-rate-limits (request person) {handler-name params} {:shaper shaper :log log :meter (test-settings/make-meter) :metric-buckets test-settings/metric-buckets})
+                       (without-request-id (get (answer-message ready (request person) {handler-name params} {:shaper shaper :log log})
                                                 handler-name)))
             my-actions (let [handlers {:groundwork-access/my-actions (access/make-my-actions-handler {:pool app-pool :tables tables :scope-kinds scope-kinds
                                                                                              :find-session-step (access/make-find-session-step app-pool settings)
@@ -111,7 +111,7 @@
                          (fn [person]
                            (:shaped-data (shaped-json-api/turn-json-data-into-shaped-data-or-errors
                                           shaper access/my-actions-answer-shape
-                                          (get (bridge/answer-message handlers :no-rate-limits (request person) {:groundwork-access/my-actions {}} {:shaper shaper :log log :meter (test-settings/make-meter) :metric-buckets test-settings/metric-buckets})
+                                          (get (answer-message handlers (request person) {:groundwork-access/my-actions {}} {:shaper shaper :log log})
                                                :groundwork-access/my-actions)))))
             explain  (fn [person handler-name params]
                        (access/explain-refusal {:pool app-pool :handlers handlers :tables tables :scope-kinds scope-kinds}
@@ -166,7 +166,7 @@
                 (is (= [{:scope-kind :shop :scope-id hotcoats :roles []}] (:memberships answer)) "a member, holding no role")))
 
             (testing "the leak test: Anna's roles and Tom's none reach nothing of the other shop"
-              (let [options {:shaper shaper :log log :meter (test-settings/make-meter) :metric-buckets test-settings/metric-buckets :scope-kinds scope-kinds :seed 7 :size 10}]
+              (let [options {:answer-message (make-answerer shaper log) :scope-kinds scope-kinds :seed 7 :size 10}]
                 (is (= [] (access/find-leaks ready (request anna) {:orders [order-2] :shops [other-shop]} options)))
                 (is (= [] (access/find-leaks ready (request tom) {:orders [order-1 order-2] :shops [hotcoats other-shop]} options)))))
 

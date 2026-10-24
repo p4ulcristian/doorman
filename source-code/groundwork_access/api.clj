@@ -211,7 +211,7 @@
 
 (defn make-find-session-step
   "A step for the start of a handler: who is asking, from the request's
-   proof (read at :groundwork-bridge/request), groundwork-access's own and nothing else:
+   proof (read at :groundwork-steps/request), groundwork-access's own and nothing else:
 
    - a token, Authorization: Bearer <text>: its person, with no session
      flags (a token has none) and no visitor; no Origin check, since a
@@ -229,7 +229,7 @@
    in), :groundwork-access/visitor-id (a visitor session's id, nil when someone is
    signed in or there is none) and :groundwork-access/session-flags (#{} for none),
    and the person (with the token's id, {:person-id … :token-id …}) or the
-   visitor is added to the message's log (bridge's :groundwork-bridge/log, given
+   visitor is added to the message's log (:groundwork-steps/log, given
    groundwork-logs's with-context), so every line the later steps write says who
    asked. Checks the settings first."
   [pool settings]
@@ -601,7 +601,7 @@
 
    Then each gets the check in front of its steps and runs them in one
    transaction that tells Postgres who is asking. The check refuses (by
-   bridge's refuse): a record its asker may not reach :groundwork-access/not-found,
+   groundwork-steps's refuse): a record its asker may not reach :groundwork-access/not-found,
    one they may see but not act on :groundwork-access/not-allowed; a :scope [kind
    param] whose scope doesn't hold the action (a membership above it
    counts) :groundwork-access/not-found, one a session flag or the scope's state
@@ -628,7 +628,7 @@
                                                  :find-session-step (access/make-find-session-step pool settings)})
 
    The handler's steps reach the database through :groundwork-access/transaction in
-   their context, which carries the message's log (:groundwork-bridge/log, its
+   their context, which carries the message's log (:groundwork-steps/log, its
    request id): work a step keeps with groundwork-postgres's run-after-commit! that
    fails is written there."
   [handlers options]
@@ -818,14 +818,15 @@
    :table (the options' :scope-kinds) in its param; any other must give
    none of them back. Its other params come from its :params-shape, by
    malli's generator, with the options' :seed and :size. Each message is
-   answered as over http, by the options' :shaper, the app's shaper, :log,
-   the app's log, and :meter, the app's meter, with :metric-buckets,
-   bridge's histogram bounds (the settings' own): groundwork-access makes none of
-   them. Every option is required.
+   answered by the options' :answer-message, (fn [handlers request message])
+   -> the answer keyed by name, the runner the app plugs its handlers into,
+   as over http (groundwork's: groundwork-bridge's answer-message with the
+   app's shaper, log and meter): groundwork-access runs no message itself.
+   Every option is required.
    Returns every leak; empty means none.
 
      (is (= [] (access/find-leaks ready-handlers anna-request {:orders [order-in-shop-9] :shops [shop-9]}
-                                   {:shaper groundwork-shaped-json :log log :meter meter :metric-buckets metric-buckets
-                                    :scope-kinds scope-kinds :seed 7 :size 30})))"
+                                   {:answer-message #(bridge/answer-message %1 :no-rate-limits %2 %3 answer-options)
+                                    :scope-kinds    scope-kinds :seed 7 :size 30})))"
   [handlers request foreign-ids options]
   (leaks/find-leaks handlers request foreign-ids (settings/check-leak-options options)))

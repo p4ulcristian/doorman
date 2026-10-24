@@ -9,7 +9,7 @@
    [groundwork-access.test-settings :as test-settings]
    [groundwork-access.cookie :as cookie]
    [groundwork-postgres.api :as postgres]
-   [groundwork-bridge.api :as bridge]))
+   [groundwork-steps.api :as steps]))
 
 (def ^:private port (some-> (System/getenv "ACCESS_TEST_PORT") parse-long))
 
@@ -27,7 +27,7 @@
                      set-cookie (assoc "cookie" (first (clojure.string/split set-cookie #";"))))})
 
 (defn- run-find-session [step request]
-  (bridge/run-steps-until-answered [step] {:groundwork-bridge/request request :groundwork-bridge/log test-log/log}))
+  (steps/run-steps-until-answered [step] {:groundwork-steps/request request :groundwork-steps/log test-log/log}))
 
 (deftest the-cookie
   (testing "only the fingerprint is kept, and it is the same for the same cookie"
@@ -70,11 +70,11 @@
             (let [context (run-find-session step (make-request set-cookie "https://app.test"))]
               (is (= anna (:groundwork-access/person-id context)))
               (reset! test-log/lines [])
-              ((:groundwork-bridge/log context) :info :test/later-step {})
+              ((:groundwork-steps/log context) :info :test/later-step {})
               (is (= [{"person-id" (str anna)}] (mapv #(get % "context") @test-log/lines))
                   "every line a later step writes says who asked")))
           (testing "another site's request is answered with an error, before any work"
-            (is (= (refusal :groundwork-access/not-allowed) (:groundwork-bridge/answer (run-find-session step (make-request set-cookie "https://evil.test"))))))
+            (is (= (refusal :groundwork-access/not-allowed) (:groundwork-steps/answer (run-find-session step (make-request set-cookie "https://evil.test"))))))
           (testing "no cookie: nobody"
             (is (nil? (:groundwork-access/person-id (run-find-session step (make-request nil "https://app.test"))))))
           (testing "signed out: the same cookie finds nobody"
@@ -100,7 +100,7 @@
             (is (uuid? visitor-id))
             (is (= [nil visitor-id #{}] ((juxt :groundwork-access/person-id :groundwork-access/visitor-id :groundwork-access/session-flags) context)))
             (reset! test-log/lines [])
-            ((:groundwork-bridge/log context) :info :test/later-step {})
+            ((:groundwork-steps/log context) :info :test/later-step {})
             (is (= [{"visitor-id" (str visitor-id)}] (mapv #(get % "context") @test-log/lines)))
             (is (re-find #"Max-Age=172800" set-cookie) ":visitor-session-days, 2")
             (testing "it lasts :visitor-session-days from when it is seen again"

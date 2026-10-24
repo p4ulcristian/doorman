@@ -9,14 +9,14 @@
   (:require
    [clojure.string :as str]
    [clojure.test :refer [deftest is testing]]
-   [groundwork-access.test-answers :refer [refusal without-request-id]]
+   [groundwork-access.test-answers :refer [answer-message make-answerer refusal without-request-id]]
    [groundwork-postgres.api :as postgres]
    [groundwork-access.api :as access]
    [groundwork-access.test-roles :refer [add-member!]]
    [groundwork-access.test-log :refer [log]]
    [groundwork-access.test-settings :as test-settings]
    [groundwork-access.test-shaper :refer [shaper]]
-   [groundwork-bridge.api :as bridge]))
+   [groundwork-steps.api :as steps]))
 
 (def ^:private port test-settings/port)
 
@@ -70,7 +70,7 @@
 
 (defn- query [text] (postgres/make-query-from-sql-text "a test statement" text))
 
-(defn- answer-with [f] {:name :answer :enter #(bridge/add-answer-to-context % (f (:groundwork-access/transaction %) (:groundwork-bridge/message-data %)))})
+(defn- answer-with [f] {:name :answer :enter #(steps/add-answer-to-context % (f (:groundwork-access/transaction %) (:groundwork-steps/message-data %)))})
 
 (def ^:private handlers
   {:categories/all {:action :catalogue/see :scope :no-scope
@@ -124,7 +124,7 @@
                                                                                                            {:settings settings :tables [] :session-flags #{}}))
                                                                             #";"))))})
             ask      (fn [person handler-name params]
-                       (without-request-id (get (bridge/answer-message ready :no-rate-limits (request person) {handler-name params} {:shaper shaper :log log :meter (test-settings/make-meter) :metric-buckets test-settings/metric-buckets})
+                       (without-request-id (get (answer-message ready (request person) {handler-name params} {:shaper shaper :log log})
                                                 handler-name)))]
         (try
           (testing "the gate: a shop's own categories are read by anyone, the universal ones are not"

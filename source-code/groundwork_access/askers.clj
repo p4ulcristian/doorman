@@ -21,7 +21,7 @@
    [groundwork-access.settings :as settings]
    [groundwork-access.tokens :as tokens]
    [groundwork-logs.api :as logs]
-   [groundwork-bridge.api :as bridge]))
+   [groundwork-steps.api :as steps]))
 
 (def ^:private nobody {:person-id nil :visitor-id nil :session-flags #{}})
 
@@ -73,17 +73,17 @@
                  :groundwork-access/person-id person-id
                  :groundwork-access/visitor-id visitor-id
                  :groundwork-access/session-flags session-flags)
-    person-id  (update :groundwork-bridge/log logs/with-context (cond-> {:person-id person-id} token-id (assoc :token-id token-id)))
-    visitor-id (update :groundwork-bridge/log logs/with-context {:visitor-id visitor-id})))
+    person-id  (update :groundwork-steps/log logs/with-context (cond-> {:person-id person-id} token-id (assoc :token-id token-id)))
+    visitor-id (update :groundwork-steps/log logs/with-context {:visitor-id visitor-id})))
 
 (defn make-find-session-step [pool settings]
   (let [settings (settings/check-settings settings)]
     {:name  :groundwork-access/find-session
      :enter (fn [context]
-              (let [{:keys [refusal asker token-id]} (find-asker-of-request pool (:groundwork-bridge/request context) settings)]
+              (let [{:keys [refusal asker token-id]} (find-asker-of-request pool (:groundwork-steps/request context) settings)]
                 (if refusal
-                  (do ((:groundwork-bridge/log context) :info :groundwork-access/request-refused {:because (:because refusal)})
-                      (bridge/refuse context (:reason refusal) nil))
+                  (do ((:groundwork-steps/log context) :info :groundwork-access/request-refused {:because (:because refusal)})
+                      (steps/refuse context (:reason refusal) nil))
                   (put-asker-into-context context asker token-id))))}))
 
 (defn find-session-key-of-request

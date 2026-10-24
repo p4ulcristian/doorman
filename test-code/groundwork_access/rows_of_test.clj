@@ -10,14 +10,14 @@
   (:require
    [clojure.string :as str]
    [clojure.test :refer [deftest is testing]]
-   [groundwork-access.test-answers :refer [refusal without-request-id]]
+   [groundwork-access.test-answers :refer [answer-message make-answerer refusal without-request-id]]
    [groundwork-postgres.api :as postgres]
    [groundwork-access.api :as access]
    [groundwork-access.test-log :refer [log]]
    [groundwork-access.test-roles :refer [add-member!]]
    [groundwork-access.test-settings :as test-settings]
    [groundwork-access.test-shaper :refer [shaper]]
-   [groundwork-bridge.api :as bridge]))
+   [groundwork-steps.api :as steps]))
 
 (def ^:private port test-settings/port)
 
@@ -82,13 +82,13 @@
 (def ^:private emails (atom []))
 
 (def ^:private send-email
-  {:name :send-email :enter #(do (swap! emails conj (:groundwork-bridge/message-data %)) %)})
+  {:name :send-email :enter #(do (swap! emails conj (:groundwork-steps/message-data %)) %)})
 
 (def ^:private insert-move
   (query (str "INSERT INTO moves (move__shop_id, move__batch_id, move__workstation_id) "
               "SELECT batch__shop_id, batch__id, :move/workstation-id FROM batches WHERE batch__id = :move/batch-id")))
 
-(defn- answer-with [f] {:name :answer :enter #(bridge/add-answer-to-context % (f (:groundwork-access/transaction %) (:groundwork-bridge/message-data %)))})
+(defn- answer-with [f] {:name :answer :enter #(steps/add-answer-to-context % (f (:groundwork-access/transaction %) (:groundwork-steps/message-data %)))})
 
 (def ^:private handlers
   {:batches/move      {:action :batches/edit :record [:batches :batch/id]
@@ -191,7 +191,7 @@
                                                                                                            {:settings settings :tables [] :session-flags #{}}))
                                                                             #";"))))})
             ask      (fn [person handler-name params]
-                       (without-request-id (get (bridge/answer-message ready :no-rate-limits (request person) {handler-name params} {:shaper shaper :log log :meter (test-settings/make-meter) :metric-buckets test-settings/metric-buckets})
+                       (without-request-id (get (answer-message ready (request person) {handler-name params} {:shaper shaper :log log})
                                                 handler-name)))
             moves-made #(count-rows owner-pool "SELECT move__id FROM moves")]
         (try
@@ -248,7 +248,7 @@
 
           (testing "the leak test still passes"
             (is (= [] (access/find-leaks ready (request anna) {:batches [batch-99] :shops [shop-c]}
-                                          {:shaper shaper :log log :meter (test-settings/make-meter) :metric-buckets test-settings/metric-buckets :scope-kinds scope-kinds :seed 7 :size 10}))))
+                                          {:answer-message (make-answerer shaper log) :scope-kinds scope-kinds :seed 7 :size 10}))))
           (finally
             (postgres/stop-pool! app-pool)
             (postgres/stop-pool! owner-pool)))))))

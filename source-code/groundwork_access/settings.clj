@@ -152,26 +152,16 @@
 (def leak-options-shape
   "find-leaks's options, every key required: malli's generator makes each
    handler's other params from its :params-shape.
-   :shaper: the app's shaper (groundwork-shaped-json.api's make-shaper-from-settings), which each
-   message is answered by, as over http (bridge's answer-message);
-   groundwork-access never makes one.
-   :log: the app's log (groundwork-logs's log-function), which each message's log
-   is made from, as over http; groundwork-access never makes one.
-   :meter: the app's meter (a test's own in a test), which bridge's
-   answer-message counts each message into, as over http; groundwork-access never
-   makes one.
-   :metric-buckets: bridge's histogram bounds, the settings' own
-   ({:answer-seconds [...]}), which answer-message declares its metrics
-   with.
+   :answer-message: (fn [handlers request message]) -> the answer keyed by
+   name, as the app's runner answers a message over http (groundwork's:
+   groundwork-bridge's answer-message, with the app's shaper, log and meter);
+   groundwork-access runs no message itself.
    :scope-kinds: the app's (check-scope-kinds): a :scope [kind param]
    handler is asked in the foreign ids of its kind's :table.
    :seed: the same seed makes the same params every run.
    :size: how big the made-up values get (malli's 30 when it chose)."
   [:map {:closed true}
-   [:shaper [some? {:error/message "should be the app's shaper, made by groundwork-shaped-json.api/make-shaper-from-settings"}]]
-   [:log [fn? {:error/message "should be the app's log function, made by groundwork-logs"}]]
-   [:meter [some? {:error/message "should be the app's meter, made by groundwork-metrics.api/make-meter"}]]
-   [:metric-buckets map?]
+   [:answer-message [fn? {:error/message "should be the app's runner of a message, (fn [handlers request message]) -> the answer by name"}]]
    [:scope-kinds [:map-of :keyword map?]]
    [:seed :int]
    [:size [:int {:min 0}]]])

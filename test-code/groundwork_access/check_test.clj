@@ -4,7 +4,7 @@
   (:require
    [clojure.string :as str]
    [clojure.test :refer [deftest is testing]]
-   [groundwork-access.test-answers :refer [refusal refusal-json read-without-request-ids without-request-id]]
+   [groundwork-access.test-answers :refer [answer-json-text make-answerer refusal refusal-json read-without-request-ids without-request-id]]
    [groundwork-access.api :as access]
    [groundwork-access.test-roles :refer [add-member!]]
    [groundwork-access.check :as check]
@@ -13,10 +13,7 @@
    [groundwork-postgres.api :as postgres]
    [groundwork-access.test-log :as test-log :refer [log]]
    [groundwork-access.test-shaper :refer [shaper]]
-   [groundwork-bridge.api :as bridge])
-  (:import
-   (java.net URI)
-   (java.net.http HttpClient HttpRequest HttpRequest$BodyPublishers HttpResponse$BodyHandlers)))
+   [groundwork-steps.api :as steps]))
 
 (def ^:private port (some-> (System/getenv "ACCESS_TEST_PORT") parse-long))
 
@@ -62,9 +59,9 @@
 
 (def ^:private answer-the-order
   {:name  :answer-the-order
-   :enter (fn [{:groundwork-bridge/keys [log message-data] :as context}]
+   :enter (fn [{:groundwork-steps/keys [log message-data] :as context}]
             (log :info :test/answering {:order/id (:order/id message-data)})
-            (bridge/add-answer-to-context context {:order/id (:order/id message-data)}))})
+            (steps/add-answer-to-context context {:order/id (:order/id message-data)}))})
 
 (def ^:private carl #uuid "00000000-0000-4000-8000-00000000000e")
 
@@ -76,7 +73,7 @@
                    :refusals     {}
                    :rate-limit   nil
                    :run-steps-in nil
-                   :steps        [{:name :remind :enter #(bridge/add-answer-to-context % {})}]}
+                   :steps        [{:name :remind :enter #(steps/add-answer-to-context % {})}]}
    :orders/clear-cache {:action       :orders/see       ; work kept for after the commit, which fails
                         :scope        :every-scope-holding-the-action
                         :params-shape [:map]
@@ -88,7 +85,7 @@
                                         :enter (fn [context]
                                                  (postgres/run-after-commit! (:groundwork-access/transaction context)
                                                                            #(throw (ex-info "the cache is gone" {})))
-                                                 (bridge/add-answer-to-context context {}))}]}
+                                                 (steps/add-answer-to-context context {}))}]}
    :orders/one {:action       :orders/see
                 :record       [:orders :order/id]
                 :params-shape [:map [:order/id :uuid]]
@@ -100,14 +97,16 @@
 
 (defn- run-sql! [pool text] (postgres/run-statement! pool (postgres/make-query-from-sql-text "test" text) {}))
 
-(defn- ask [port cookie order-id]
-  (.body (.send (HttpClient/newHttpClient)
-                (cond-> (HttpRequest/newBuilder (URI. (str "http://localhost:" port "/mail/http")))
-                  true   (.header "origin" "http://app.test")
-                  cookie (.header "cookie" cookie)
-                  true   (-> (.POST (HttpRequest$BodyPublishers/ofString (str "{\"orders/one\":{\"order/id\":\"" order-id "\"}}")))
-                             (.build)))
-                (HttpResponse$BodyHandlers/ofString))))
+(defn- send-text
+  "A message's JSON text, from the app's pages (its Origin) with the
+   cookie, answered as JSON text, as over http."
+  [ready cookie message-text]
+  (answer-json-text ready {:request-method :post
+                           :headers        (cond-> {"origin" "http://app.test"} cookie (assoc "cookie" cookie))}
+                    message-text {:shaper shaper :log log}))
+
+(defn- ask [ready cookie order-id]
+  (send-text ready cookie (str "{\"orders/one\":{\"order/id\":\"" order-id "\"}}")))
 
 (defn- make-database! [pool]
   (run-sql! pool "DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public; DROP SCHEMA IF EXISTS groundwork_access CASCADE; DROP SCHEMA IF EXISTS groundwork_postgres CASCADE")
@@ -120,25 +119,6 @@
       (access/add-scope! transaction scope-kinds :shop shop-9 bob nil)
       (add-member! transaction scope-kinds [:shop shop-7] anna #{"Staff"}))))
 
-(def ^:private server-settings
-  "bridge's settings: three addresses, no proxy in front."
-  {:ip "127.0.0.1" :port 0 :proxy-protocol :disable :client-address-header nil :server-header nil
-   :max-body-bytes 8388608 :max-request-head-bytes 8192 :max-ws-message-bytes 4194304
-   :idle-timeout-ms 60000 :threads {:min 8 :max 50 :idle-timeout-ms 60000}
-   :addresses {:http "/mail/http" :sse "/mail/sse" :ws "/mail/ws"}
-   :ping-every-ms 25000 :sse-reconnect-after-ms 3000 :ws-reopen-after-ms 1000
-   :stop-wait-ms 10000 :stop-wait-after-cut-ms 1000
-   :rate-limit-buckets-before-cleanup 10000
-   :metric-buckets {:answer-seconds [0.01 0.1 1]}})
-
-(def ^:private server-options
-  "bridge's options: askers by address, no hooks; a new meter is added
-   where the routes are made."
-  {:shaper                shaper
-   :log                 log
-   :find-rate-limit-key #(bridge/find-client-address % nil)
-   :on-sse-open nil :on-sse-close nil :on-ws-open nil :on-ws-close nil})
-
 (def ^:private no-session-step {:name :no-session :enter identity})
 
 (deftest a-handler-must-declare-its-action-and-shapes
@@ -146,7 +126,7 @@
                         (access/put-access-into-handlers {:x/y {:steps []}} {:pool (Object.) :tables [shops orders] :scope-kinds scope-kinds
                                                                               :find-session-step no-session-step}))))
 
-(deftest a-handler-writes-out-bridge-s-keys
+(deftest a-handler-writes-out-its-runner-s-keys
   (let [problems (try (access/put-access-into-handlers
                        {:x/y (dissoc (:orders/remind handlers) :rate-limit :run-steps-in)
                         :x/z (assoc (:orders/remind handlers) :run-steps-in (fn [run context] (run context)))}
@@ -195,12 +175,12 @@
     (is (= :groundwork-access/bad-options (:type errors)))
     (is (= #{:pool :find-session-step} (set (keys (:errors errors)))) "each missing one is named")))
 
-(deftest the-leak-test-takes-the-apps-shaper
+(deftest the-leak-test-takes-the-apps-runner
   (let [errors (try (access/find-leaks {} {} {} {:seed 7 :size 30})
                     (catch clojure.lang.ExceptionInfo e (ex-data e)))]
     (is (= :groundwork-access/bad-options (:type errors)))
-    (is (= #{:shaper :log :meter :metric-buckets :scope-kinds} (set (keys (:errors errors))))
-        "groundwork-access makes no shaper, log or meter: the app hands its own in")))
+    (is (= #{:answer-message :scope-kinds} (set (keys (:errors errors))))
+        "groundwork-access runs no message: the app hands its runner in")))
 
 (deftest the-check-end-to-end
   (if-not port
@@ -208,53 +188,39 @@
     (let [pool   (test-settings/start-pool! (System/getenv "ACCESS_TEST_USER") 4)
           ready  (access/put-access-into-handlers handlers {:pool pool :tables [shops orders] :scope-kinds scope-kinds
                                                             :find-session-step (access/make-find-session-step pool settings)})
-          server (bridge/start-server! (get-in (first (bridge/make-routes-for-messages ready server-settings (assoc server-options :meter (test-settings/make-meter)))) [1 :post :handler])
-                                          server-settings {:log log})
           cookie #(first (str/split (:set-cookie (access/sign-in! pool {:headers {}} % {:settings settings :tables [] :session-flags #{}})) #";"))]
       (try
         (make-database! pool)
         (let [anna-cookie (cookie anna)]
           (testing "Anna, Staff in shop 7, sees order 42"
             (reset! test-log/lines [])
-            (is (= (str "{\"orders/one\":{\"order/id\":\"" order-42 "\"}}") (ask (:port server) anna-cookie order-42)))
+            (is (= (str "{\"orders/one\":{\"order/id\":\"" order-42 "\"}}") (ask ready anna-cookie order-42)))
             (let [[line] (test-log/find-lines "test/answering")]
               (is (= (str anna) (get-in line ["context" "person-id"]))
                   "the handler's own step writes who asked, which the session step added")
               (is (some? (get-in line ["context" "request-id"])) "beside the message's request id")))
           (testing "Anna asks for shop 9's order 99: not found"
-            (is (= (refusal-json "orders/one" :groundwork-access/not-found) (read-without-request-ids (ask (:port server) anna-cookie order-99))))))
+            (is (= (refusal-json "orders/one" :groundwork-access/not-found) (read-without-request-ids (ask ready anna-cookie order-99))))))
         (testing "Bob, Owner of shop 9 only, asks for order 42: not found"
-          (is (= (refusal-json "orders/one" :groundwork-access/not-found) (read-without-request-ids (ask (:port server) (cookie bob) order-42)))))
+          (is (= (refusal-json "orders/one" :groundwork-access/not-found) (read-without-request-ids (ask ready (cookie bob) order-42)))))
         (testing "a handler without a :record: only for someone who holds its action somewhere"
-          (let [remind #(.body (.send (HttpClient/newHttpClient)
-                                      (cond-> (HttpRequest/newBuilder (URI. (str "http://localhost:" (:port server) "/mail/http")))
-                                        true (.header "origin" "http://app.test")
-                                        %    (.header "cookie" %)
-                                        true (-> (.POST (HttpRequest$BodyPublishers/ofString "{\"orders/remind\":{}}")) (.build)))
-                                      (HttpResponse$BodyHandlers/ofString)))]
+          (let [remind #(send-text ready % "{\"orders/remind\":{}}")]
             (is (= "{\"orders/remind\":{}}" (remind (cookie anna))) "Anna is Staff somewhere")
             (is (= (refusal-json "orders/remind" :groundwork-access/not-found) (read-without-request-ids (remind (cookie carl)))) "Carl is in no shop")
             (is (= (refusal-json "orders/remind" :groundwork-access/signed-out) (read-without-request-ids (remind nil))) "nobody signed in")))
         (testing "the check's transaction carries the message's log: a step's after-commit work that fails is written with its request id"
           (reset! test-log/lines [])
-          (let [answer (.body (.send (HttpClient/newHttpClient)
-                                     (-> (HttpRequest/newBuilder (URI. (str "http://localhost:" (:port server) "/mail/http")))
-                                         (.header "origin" "http://app.test")
-                                         (.header "cookie" (cookie anna))
-                                         (.POST (HttpRequest$BodyPublishers/ofString "{\"orders/clear-cache\":{}}"))
-                                         (.build))
-                                     (HttpResponse$BodyHandlers/ofString)))
+          (let [answer (send-text ready (cookie anna) "{\"orders/clear-cache\":{}}")
                 [line] (test-log/find-lines "groundwork-postgres/after-commit-failed")]
             (is (= "{\"orders/clear-cache\":{}}" answer) "the commit stands")
             (is (some? (get-in line ["context" "request-id"])) "the message's request id")
             (is (= (str anna) (get-in line ["context" "person-id"])) "and who asked")))
         (testing "nobody signed in: signed out, whether the record exists or not"
-          (is (= (refusal-json "orders/one" :groundwork-access/signed-out) (read-without-request-ids (ask (:port server) nil order-42))))
-          (is (= (refusal-json "orders/one" :groundwork-access/signed-out) (read-without-request-ids (ask (:port server) nil order-99))))
-          (is (= (refusal-json "orders/one" :groundwork-access/signed-out) (read-without-request-ids (ask (:port server) nil (random-uuid))))
+          (is (= (refusal-json "orders/one" :groundwork-access/signed-out) (read-without-request-ids (ask ready nil order-42))))
+          (is (= (refusal-json "orders/one" :groundwork-access/signed-out) (read-without-request-ids (ask ready nil order-99))))
+          (is (= (refusal-json "orders/one" :groundwork-access/signed-out) (read-without-request-ids (ask ready nil (random-uuid))))
               "no such order: the same answer"))
         (finally
-          (bridge/stop-server! server)
           (postgres/stop-pool! pool))))))
 
 (deftest an-action-that-only-reads

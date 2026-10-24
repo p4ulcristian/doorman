@@ -1,5 +1,7 @@
 # The app passes its wire; doorman never makes one
 
+> **Changed in part by** [groundwork-access requires groundwork-steps, not groundwork-bridge](2026-10-24-groundwork-access-requires-groundwork-steps-not-groundwork-bridge.md) (2026-10-24): the leak test takes no wire any more; the app's runner, `:answer-message`, carries it.
+
 > **Changed in part** by [The session step adds the person to the message's log; the leak test takes the app's log](2026-10-22-the-session-step-adds-the-person-to-the-log.md) (2026-10-22, v0.3.0): `find-leaks` takes `:log` beside `:wire`.
 
 > Changes in part [access, piece 5: the leak test](2026-10-22-access-piece-5-the-leak-test.md) (`find-leaks` takes the wire) and [doorman is its own library](2026-10-22-doorman-is-its-own-library.md) (doorman no longer needs wire itself). Since v0.2.0, on mailroom v0.2.0.

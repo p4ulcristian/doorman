@@ -22,16 +22,18 @@ io.github.p4ulcristian/groundwork-access {:git/tag "v0.7.11" :git/sha "fa22575"}
 ```
 
 Needs [groundwork-postgres](https://github.com/p4ulcristian/groundwork-postgres) (Postgres, tables as
-maps, their gates), [groundwork-bridge](https://github.com/p4ulcristian/groundwork-bridge) (a
-handler's steps), [groundwork-logs](https://github.com/p4ulcristian/groundwork-logs) (the
+maps, their gates), [groundwork-steps](https://github.com/p4ulcristian/groundwork-steps) (a
+handler's steps, their context's keys, the refusal's shape), [groundwork-logs](https://github.com/p4ulcristian/groundwork-logs) (the
 message's log), malli with test.check (the settings checked, the leak
 test's params) and jsonista. One public namespace, `groundwork-access.api`; its parts
 are `groundwork-access.*`. One more namespace is a REPL's only, never an app's code:
 `groundwork-access.repl`'s `make-step-asking-as`, a step in place of the find-session
-step that asks as a named asker (a composer's "ask as this person" tool). The leak test takes the app's
-[groundwork-shaped-json](https://github.com/p4ulcristian/groundwork-shaped-json) under `:shaper` and its log under
-`:log`; groundwork-access makes neither. The find-session step adds the person to the
-message's log (bridge's `:groundwork-bridge/log`, `{:person-id …}`), so every later
+step that asks as a named asker (a composer's "ask as this person" tool). groundwork-access
+requires no message runner: its steps run in whichever the app plugs its handlers into
+(groundwork's, groundwork-bridge), and the leak test takes that runner under
+`:answer-message` ([why](decisions/2026-10-24-groundwork-access-requires-groundwork-steps-not-groundwork-bridge.md)).
+The find-session step adds the person to the
+message's log (`:groundwork-steps/log`, `{:person-id …}`), so every later
 step's lines say who asked
 ([why](decisions/2026-10-22-the-session-step-adds-the-person-to-the-log.md)).
 
@@ -61,7 +63,7 @@ step's lines say who asked
 | what | `make-access-functions` | the SQL functions made from the app's sentences and denies (a `:via`'s, a scope state's, the guard's, a record under a record's fill, `doorman."may <action> on <table>"()`), as groundwork-postgres's made functions, `{:name :sql}`: the app passes them to `migrate!` with `function-files` and its own, and groundwork-postgres makes them before the gates, compares them and drops one whose sentence is gone ([why](https://github.com/p4ulcristian/groundwork-postgres/blob/tidy-up/decisions/2026-10-23-functions-may-be-sql-text-a-library-makes.md)) |
 | what | `put-access-into-handlers` | every handler says where it acts (`:record`, or `:scope` `[kind param]`, `:every-scope-holding-the-action`, `:no-scope`); the check in front of its steps, which run in a transaction where Postgres hears only the handler's action, in those scopes ([why](decisions/2026-10-23-a-handler-says-where-it-acts-and-postgres-hears-only-that.md)); a param marked `[:uuid {:groundwork-access/row-of :workstations}]` must be a row the action reads there, else `:groundwork-access/not-found`, before any step ([why](decisions/2026-10-23-a-param-may-say-it-is-a-row-of-a-table.md)) |
 | what | `put-gates-on-tables` | the table maps with their gates, `:gates nil` on the ungated ones, and a record under a record (`:parent`) given its link to the parent and the fill of its carried columns, for groundwork-postgres |
-| what | `find-leaks` | the leak test, for the app's own tests, by the app's shaper, log and meter (`:shaper`, `:log`, `:meter`, with bridge's `:metric-buckets`); a record or scope it must not reach must be refused `:groundwork-access/not-found` (`:groundwork-access/signed-out` for an asker nobody signed in); a `:scope [kind param]` handler asked in each foreign scope (`:scope-kinds`) |
+| what | `find-leaks` | the leak test, for the app's own tests, each message answered by the app's runner (`:answer-message`, `(fn [handlers request message])`, groundwork-bridge's `answer-message` in groundwork); a record or scope it must not reach must be refused `:groundwork-access/not-found` (`:groundwork-access/signed-out` for an asker nobody signed in); a `:scope [kind param]` handler asked in each foreign scope (`:scope-kinds`) |
 | what | `refusals` (both sides; the browser's half has `put-refusals-into-shapes` too) | groundwork-access's reasons, `:groundwork-access/signed-out` `:groundwork-access/not-found` `:groundwork-access/not-allowed`, added to every handler it wraps |
 | what | `run-as-system!` | `(f transaction)` as a named system actor (a webhook's function): the rows the sentences give it by `[:system name]`, the open ones and the ungated tables, nothing else; the app's own role, no role that passes the gates |
 | what | `find-system-leaks` | the leak test of a system actor: the rows it must not reach, read, changed and deleted as it, undone |
@@ -69,12 +71,12 @@ step's lines say who asked
 
 Nothing has a default: every setting and option is written out; a missing
 one refuses, named, with every other problem at once. A handler writes out
-every key bridge reads (`:steps :params-shape :answer-shape :refusals
+every key its runner reads (groundwork-bridge's: `:steps :params-shape :answer-shape :refusals
 :rate-limit :run-steps-in`); groundwork-access wants both shapes real and `:run-steps-in` nil:
 [the decision](decisions/2026-10-22-a-handler-writes-out-mailrooms-keys.md).
 
-The check refuses with groundwork-access's reasons, `access/refusals` (bridge's
-named refusals; [why](https://github.com/p4ulcristian/groundwork-bridge/blob/tidy-up/decisions/2026-10-23-a-refusal-is-a-named-reason-declared-on-its-handler.md)):
+The check refuses with groundwork-access's reasons, `access/refusals` (groundwork-steps's
+`refuse`, a named reason; [why](https://github.com/p4ulcristian/groundwork-bridge/blob/tidy-up/decisions/2026-10-23-a-refusal-is-a-named-reason-declared-on-its-handler.md)):
 `:groundwork-access/not-found` (the asker may not reach the record or scope, nor see
 it), `:groundwork-access/not-allowed` (they may see it, but not do this; a session
 flag or a scope's state says no; a request from another Origin, or with a
@@ -168,8 +170,8 @@ app's shapes by name. Each needs its text in the app's catalogs.
                    :record       [:orders :order/id]               ; one row: it acts in that row's shop
                    :params-shape [:map [:order/id :uuid]]
                    :answer-shape [:map [:order/id :uuid]]
-                   :refusals     {:order/archived nil}             ; bridge's: the steps' own reasons; groundwork-access adds its three
-                   :rate-limit   nil                               ; bridge's, nil for none
+                   :refusals     {:order/archived nil}             ; the runner's: the steps' own reasons; groundwork-access adds its three
+                   :rate-limit   nil                               ; the runner's (groundwork-bridge), nil for none
                    :run-steps-in nil                               ; nil: groundwork-access's transaction runs them
                    :steps        [find-order add-order-answer]}    ; they use (:groundwork-access/transaction context)
     :orders/place {:action :orders/edit
@@ -220,11 +222,11 @@ app's shapes by name. Each needs its text in the app's catalogs.
 ;=> {:answer :groundwork-access/not-found :record {…} :memberships [{… :roles [{:role-id … :name "Staff" :actions […]}]}]
 ;    :sentences [{… :to {:holds? false :needs :orders/see :given-by [] …}}] :denies […]}
 
-;; in the app's tests, with the app's shaper (groundwork-shaped-json.api's make-shaper-from-settings), log (groundwork-logs's),
-;; meter (groundwork-metrics's) and bridge's :metric-buckets (the settings')
+;; in the app's tests, each message answered by the app's runner, as over http
+;; (in groundwork: groundwork-bridge's answer-message with the app's shaper, log and meter)
 (is (= [] (access/find-leaks ready anna-request {:orders [order-in-another-shop] :shops [another-shop]}
-                              {:shaper shaper :log log :meter meter :metric-buckets metric-buckets
-                               :scope-kinds scope-kinds :seed 7 :size 30})))
+                              {:answer-message #(bridge/answer-message %1 :no-rate-limits %2 %3 answer-options)
+                               :scope-kinds    scope-kinds :seed 7 :size 30})))
 ```
 
 The words of a sentence: `:to` is `:anyone`, `:signed-in`, `[:member
